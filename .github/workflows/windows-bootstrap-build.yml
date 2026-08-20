@@ -4,9 +4,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore:
+      - 'build-status/**'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows-native:
@@ -152,3 +154,23 @@ jobs:
             work/release/SHA256.txt
             work/src-tauri/target/release/bundle/nsis/*.exe
             work/src-tauri/target/release/bundle/msi/*.msi
+
+      - name: Publish build status
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace Windows native build
+          "@ | Set-Content build-status/windows-native.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/windows-native.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record Windows native build [skip ci]'
+            git push origin HEAD:main
+          }
