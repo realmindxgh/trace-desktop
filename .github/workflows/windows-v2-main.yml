@@ -68,6 +68,41 @@ jobs:
           if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace v2 source reconstruction failed.' }
           Write-Host "Trace v2 payload verified: $hash"
 
+      - name: Apply native compile fixes
+        working-directory: work
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          db_path = Path("src-tauri/src/db.rs")
+          lines = db_path.read_text(encoding="utf-8").splitlines()
+          patched = []
+          lifetime_fixes = 0
+          for line in lines:
+              stripped = line.lstrip()
+              indent = line[:len(line) - len(stripped)]
+              if stripped.startswith("st.query_map(") and stripped.endswith("?"):
+                  patched.append(indent + "let out = " + stripped + ";")
+                  patched.append(indent + "out")
+                  lifetime_fixes += 1
+              else:
+                  patched.append(line)
+          if lifetime_fixes != 16:
+              raise SystemExit(f"Expected 16 rusqlite lifetime fixes, found {lifetime_fixes}")
+          db_path.write_text("\n".join(patched) + "\n", encoding="utf-8")
+
+          package_path = Path("src-tauri/src/package.rs")
+          package_text = package_path.read_text(encoding="utf-8")
+          old = "sources.push(ManifestSource{source_id:sid,archive_path:unique_archive_name(&sid,&p),checksum_sha256:sha256_file(&p)?});"
+          new = "sources.push(ManifestSource{source_id:sid.clone(),archive_path:unique_archive_name(&sid,&p),checksum_sha256:sha256_file(&p)?});"
+          if package_text.count(old) != 1:
+              raise SystemExit("Expected one moved-sid package pattern")
+          package_path.write_text(package_text.replace(old, new), encoding="utf-8")
+          print(f"Applied {lifetime_fixes} rusqlite lifetime fixes and 1 package ownership fix")
+          '@ | Set-Content scripts/ci_native_fixes.py
+          python scripts/ci_native_fixes.py
+
       - name: Prepare Windows assets
         working-directory: work
         run: |
