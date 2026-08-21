@@ -1,0 +1,5 @@
+# Keep cryptographically verified bootstrap text byte-stable across runners.
+bootstrap/v010/part* -text
+bootstrap/v010/tests/*.py text eol=lf
+bootstrap/v010/base-tests/*.py text eol=lf
+work/tests/*.py text eol=lf
