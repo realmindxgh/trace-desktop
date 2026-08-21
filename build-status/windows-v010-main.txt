@@ -1,5 +1,5 @@
 run_id=32505182627
 run_number=18
 source_sha=7a00379ffc3bb258e2d7413c80961673add4211c
-result=running
+result=failure
 workflow=Trace Windows v0.10 functional release candidate
