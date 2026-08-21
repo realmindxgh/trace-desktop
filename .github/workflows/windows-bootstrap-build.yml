@@ -41,7 +41,7 @@ jobs:
           $archive = Join-Path $env:RUNNER_TEMP 'trace-source.tar.xz'
           [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '0c02d66eb6d92f42904e2d561416f9ff945907a3fcbf6988526a4b8ae65fac3b') {
+          if ($hash -ne 'e587d49317de027d45ad639e387cdc1e3b08fb730936b25e8ad51ad16faf8e01') {
             throw "Trace bootstrap SHA-256 mismatch: $hash"
           }
           New-Item -ItemType Directory -Force -Path work | Out-Null
@@ -55,11 +55,9 @@ jobs:
         working-directory: work
         run: python -m pip install lxml pillow
 
-      - name: Generate Trace brand and Windows assets
+      - name: Generate Trace Windows assets
         working-directory: work
-        run: |
-          python scripts/generate_brand_assets.py
-          python scripts/generate_windows_assets.py
+        run: python scripts/generate_windows_assets.py
 
       - name: Frontend syntax checks
         working-directory: work
