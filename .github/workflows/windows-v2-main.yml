@@ -115,11 +115,14 @@ jobs:
           python scripts/ci_prepare_assets.py
           Copy-Item src-tauri/windows/installer-header.bmp src-tauri/windows/trace-installer-header.bmp -Force
           Copy-Item src-tauri/windows/installer-sidebar.bmp src-tauri/windows/trace-installer-sidebar.bmp -Force
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
+          Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
           $required = @(
             'src-tauri/icons/icon.ico',
             'src-tauri/windows/trace-installer-header.bmp',
             'src-tauri/windows/trace-installer-sidebar.bmp',
-            'src-tauri/windows/installer-hooks.nsh'
+            'src-tauri/windows/installer-hooks.nsh',
+            'setup-shell/src-tauri/icons/icon.ico'
           )
           foreach ($file in $required) {
             if (!(Test-Path $file)) { throw "Required Windows bundle asset is missing: $file" }
@@ -157,6 +160,19 @@ jobs:
           Copy-Item $payload.FullName work/setup-shell/src-tauri/payload/trace-payload.exe -Force
           $bytes = [IO.File]::ReadAllBytes('work/setup-shell/src-tauri/payload/trace-payload.exe')
           if ($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Embedded installer payload is not a credible Windows executable.' }
+          $payloadHash = (Get-FileHash work/setup-shell/src-tauri/payload/trace-payload.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "Native NSIS payload staged: $($bytes.Length) bytes SHA256=$payloadHash"
+
+      - name: Upload native installer checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-Native-Installers
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/src-tauri/target/release/Trace.exe
+            work/src-tauri/target/release/bundle/nsis/*.exe
+            work/src-tauri/target/release/bundle/msi/*.msi
 
       - name: Build branded Trace setup frontend
         working-directory: work/setup-shell
@@ -166,9 +182,10 @@ jobs:
 
       - name: Compile branded Trace setup shell
         working-directory: work/setup-shell
+        shell: pwsh
         run: |
-          cargo check --manifest-path src-tauri/Cargo.toml
           cargo build --release --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Trace setup shell release build failed with exit code $LASTEXITCODE" }
 
       - name: Assemble Windows release
         shell: pwsh
@@ -192,6 +209,7 @@ jobs:
           path: |
             work/release/TraceSetup.exe
             work/release/SHA256.txt
+            work/src-tauri/target/release/Trace.exe
             work/src-tauri/target/release/bundle/nsis/*.exe
             work/src-tauri/target/release/bundle/msi/*.msi
 
