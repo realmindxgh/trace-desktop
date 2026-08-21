@@ -1,0 +1,5 @@
+Trace v0.10 Windows overlay staging complete.
+Base archive SHA256: 6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074
+Overlay archive SHA256: fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da
+Overlay part01 repaired and verified.
+Regression baselines staged for v07, v08, and v09 contract patching.
