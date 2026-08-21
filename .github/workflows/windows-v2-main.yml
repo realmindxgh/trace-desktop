@@ -81,10 +81,23 @@ jobs:
           if ($hash -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw "Trace v0.10 patch SHA-256 mismatch: $hash" }
           $patch = Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
           python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
-          git apply --check --directory=work $patch
+          git apply --check --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch preflight failed.' }
-          git apply --directory=work $patch
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch application failed.' }
+          New-Item -ItemType Directory -Force -Path work/tests | Out-Null
+          Copy-Item bootstrap/v010/tests/v07_installer.py work/tests/v07_installer.py -Force
+          Copy-Item bootstrap/v010/tests/v08_release.py work/tests/v08_release.py -Force
+          Copy-Item bootstrap/v010/tests/v09_release.py work/tests/v09_release.py -Force
+          $regressionTests = @{
+            'work/tests/v07_installer.py' = 'cb903a6e69d7b2c5064f30d5b62255f24de99aef7186652b361ee143055a3564'
+            'work/tests/v08_release.py' = '38e1851daff5f2490e36087a5b6adaa9dca276ad395b661533b01b67a8399591'
+            'work/tests/v09_release.py' = 'e1194009e61549a9280735aa9bce3cef60593631074568dd581129f9ac1220c8'
+          }
+          foreach ($entry in $regressionTests.GetEnumerator()) {
+            $actual = (Get-FileHash $entry.Key -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $entry.Value) { throw "Regression contract hash mismatch for $($entry.Key): $actual" }
+          }
           New-Item -ItemType Directory -Force -Path work/setup-shell/src-tauri/icons | Out-Null
           Copy-Item work/src-tauri/icons/icon.ico work/setup-shell/src-tauri/icons/icon.ico -Force
           python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text())['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 source overlay verified')"
