@@ -98,8 +98,6 @@ jobs:
             $actual = (Get-FileHash $entry.Key -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $entry.Value) { throw "Regression contract hash mismatch for $($entry.Key): $actual" }
           }
-          New-Item -ItemType Directory -Force -Path work/setup-shell/src-tauri/icons | Out-Null
-          Copy-Item work/src-tauri/icons/icon.ico work/setup-shell/src-tauri/icons/icon.ico -Force
           python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text())['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 source overlay verified')"
           Write-Host "Trace v0.10 patch verified: $hash"
 
@@ -111,6 +109,8 @@ jobs:
           python scripts/ci_prepare_assets.py
           Copy-Item src-tauri/windows/installer-header.bmp src-tauri/windows/trace-installer-header.bmp -Force
           Copy-Item src-tauri/windows/installer-sidebar.bmp src-tauri/windows/trace-installer-sidebar.bmp -Force
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
+          Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
           $required = @(
             'src-tauri/icons/icon.ico',
             'src-tauri/windows/trace-installer-header.bmp',
