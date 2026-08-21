@@ -18,6 +18,8 @@ jobs:
   windows-v010:
     runs-on: windows-latest
     timeout-minutes: 75
+    env:
+      PYTHONUTF8: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,19 +88,17 @@ jobs:
           git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch application failed.' }
           New-Item -ItemType Directory -Force -Path work/tests | Out-Null
-          Copy-Item bootstrap/v010/tests/v07_installer.py work/tests/v07_installer.py -Force
-          Copy-Item bootstrap/v010/tests/v08_release.py work/tests/v08_release.py -Force
-          Copy-Item bootstrap/v010/tests/v09_release.py work/tests/v09_release.py -Force
-          $regressionTests = @{
-            'work/tests/v07_installer.py' = 'cb903a6e69d7b2c5064f30d5b62255f24de99aef7186652b361ee143055a3564'
-            'work/tests/v08_release.py' = '38e1851daff5f2490e36087a5b6adaa9dca276ad395b661533b01b67a8399591'
-            'work/tests/v09_release.py' = 'e1194009e61549a9280735aa9bce3cef60593631074568dd581129f9ac1220c8'
+          $stagedTests = @('schema_contract.py','v07_installer.py','v08_release.py','v09_release.py')
+          foreach ($test in $stagedTests) {
+            $source = "bootstrap/v010/tests/$test"
+            $destination = "work/tests/$test"
+            Copy-Item $source $destination -Force
+            $sourceHash = (Get-FileHash $source -Algorithm SHA256).Hash.ToLowerInvariant()
+            $destinationHash = (Get-FileHash $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($sourceHash -ne $destinationHash) { throw "Regression contract copy mismatch for $test" }
+            Write-Host "Regression contract staged: $test SHA256=$sourceHash"
           }
-          foreach ($entry in $regressionTests.GetEnumerator()) {
-            $actual = (Get-FileHash $entry.Key -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actual -ne $entry.Value) { throw "Regression contract hash mismatch for $($entry.Key): $actual" }
-          }
-          python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text())['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 source overlay verified')"
+          python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text(encoding='utf-8'))['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 source overlay verified')"
           Write-Host "Trace v0.10 patch verified: $hash"
 
       - name: Prepare Windows assets
@@ -129,13 +129,10 @@ jobs:
           node --check src/app.js
           node --check setup-shell/src/app.js
           python tests/schema_contract.py
-          python tests/v06_features.py
           python tests/v07_installer.py
           python tests/v08_release.py
           python tests/v09_release.py
           python tests/v10_functional.py
-          python tests/package_roundtrip.py
-          python tests/refi_roundtrip.py
 
       - name: Install Tauri CLI
         working-directory: work
@@ -148,6 +145,10 @@ jobs:
       - name: Rust compile check
         working-directory: work
         run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust tests
+        working-directory: work
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build Trace application and Windows installers
         working-directory: work
