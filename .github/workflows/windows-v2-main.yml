@@ -1,4 +1,4 @@
-name: Trace Windows v2 release candidate
+name: Trace Windows v0.10 functional release candidate
 
 on:
   workflow_dispatch:
@@ -11,11 +11,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: trace-windows-v2-main
+  group: trace-windows-v010-main
   cancel-in-progress: true
 
 jobs:
-  windows-v2:
+  windows-v010:
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
@@ -31,12 +31,12 @@ jobs:
           run_number=${{ github.run_number }}
           source_sha=${{ github.sha }}
           result=running
-          workflow=Trace Windows v2 release candidate
-          "@ | Set-Content build-status/windows-v2-main.txt
+          workflow=Trace Windows v0.10 functional release candidate
+          "@ | Set-Content build-status/windows-v010-main.txt
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add build-status/windows-v2-main.txt
-          git commit -m 'ci: record Windows v2 run start [skip ci]'
+          git add build-status/windows-v010-main.txt
+          git commit -m 'ci: record Windows v0.10 run start [skip ci]'
           git push origin HEAD:main
 
       - name: Set up Node
@@ -52,60 +52,43 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Reconstruct clean Trace build payload
+      - name: Reconstruct verified Trace base source
         shell: pwsh
         run: |
           $parts = Get-ChildItem bootstrap/v2/part* | Sort-Object Name
-          if ($parts.Count -ne 8) { throw "Incomplete Trace v2 bootstrap. Expected 8 parts, found $($parts.Count)." }
+          if ($parts.Count -ne 8) { throw "Incomplete Trace base bootstrap. Expected 8 parts, found $($parts.Count)." }
           $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
-          if ($b64.Length -ne 101964) { throw "Trace v2 bootstrap length mismatch: $($b64.Length)" }
-          $archive = Join-Path $env:RUNNER_TEMP 'trace-build-only.tar.xz'
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive = Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
           [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($b64))
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw "Trace v2 bootstrap SHA-256 mismatch: $hash" }
+          if ($hash -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw "Trace base SHA-256 mismatch: $hash" }
           New-Item -ItemType Directory -Force -Path work | Out-Null
           python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
-          if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace v2 source reconstruction failed.' }
-          Write-Host "Trace v2 payload verified: $hash"
+          if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace base source reconstruction failed.' }
+          Write-Host "Trace base verified: $hash"
 
-      - name: Apply native compile fixes
-        working-directory: work
+      - name: Apply verified v0.10 functional source patch
         shell: pwsh
         run: |
-          @'
-          from pathlib import Path
-
-          db_path = Path("src-tauri/src/db.rs")
-          lines = db_path.read_text(encoding="utf-8").splitlines()
-          patched = []
-          lifetime_fixes = 0
-          for line in lines:
-              stripped = line.lstrip()
-              indent = line[:len(line) - len(stripped)]
-              if stripped.startswith("st.query_map(") and stripped.endswith("?"):
-                  patched.append(indent + "let out = " + stripped + ";")
-                  patched.append(indent + "out")
-                  lifetime_fixes += 1
-              else:
-                  patched.append(line)
-          if lifetime_fixes != 16:
-              raise SystemExit(f"Expected 16 rusqlite lifetime fixes, found {lifetime_fixes}")
-          db_path.write_text("\n".join(patched) + "\n", encoding="utf-8")
-
-          package_path = Path("src-tauri/src/package.rs")
-          package_text = package_path.read_text(encoding="utf-8")
-          old = "sources.push(ManifestSource{source_id:sid,archive_path:unique_archive_name(&sid,&p),checksum_sha256:sha256_file(&p)?});"
-          new = "sources.push(ManifestSource{source_id:sid.clone(),archive_path:unique_archive_name(&sid,&p),checksum_sha256:sha256_file(&p)?});"
-          if package_text.count(old) != 1:
-              raise SystemExit("Expected one moved-sid package pattern")
-          package_path.write_text(package_text.replace(old, new), encoding="utf-8")
-
-          refi_path = Path("src-tauri/src/refi.rs")
-          refi_text = refi_path.read_text(encoding="utf-8")
-          refi_path.write_text(refi_text.replace("path::{Path, PathBuf}", "path::Path"), encoding="utf-8")
-          print(f"Applied {lifetime_fixes} rusqlite lifetime fixes, 1 package ownership fix, and removed the unused PathBuf import")
-          '@ | Set-Content scripts/ci_native_fixes.py
-          python scripts/ci_native_fixes.py
+          $parts = Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete Trace v0.10 patch. Expected 4 parts, found $($parts.Count)." }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "Trace v0.10 patch length mismatch: $($b64.Length)" }
+          $compressed = Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed, [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw "Trace v0.10 patch SHA-256 mismatch: $hash" }
+          $patch = Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch application failed.' }
+          New-Item -ItemType Directory -Force -Path work/setup-shell/src-tauri/icons | Out-Null
+          Copy-Item work/src-tauri/icons/icon.ico work/setup-shell/src-tauri/icons/icon.ico -Force
+          python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text())['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 source overlay verified')"
+          Write-Host "Trace v0.10 patch verified: $hash"
 
       - name: Prepare Windows assets
         working-directory: work
@@ -115,8 +98,6 @@ jobs:
           python scripts/ci_prepare_assets.py
           Copy-Item src-tauri/windows/installer-header.bmp src-tauri/windows/trace-installer-header.bmp -Force
           Copy-Item src-tauri/windows/installer-sidebar.bmp src-tauri/windows/trace-installer-sidebar.bmp -Force
-          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
-          Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
           $required = @(
             'src-tauri/icons/icon.ico',
             'src-tauri/windows/trace-installer-header.bmp',
@@ -129,11 +110,19 @@ jobs:
             Write-Host "Bundle asset ready: $file ($((Get-Item $file).Length) bytes)"
           }
 
-      - name: Frontend syntax checks
+      - name: Functional and source contract tests
         working-directory: work
         run: |
           node --check src/app.js
           node --check setup-shell/src/app.js
+          python tests/schema_contract.py
+          python tests/v06_features.py
+          python tests/v07_installer.py
+          python tests/v08_release.py
+          python tests/v09_release.py
+          python tests/v10_functional.py
+          python tests/package_roundtrip.py
+          python tests/refi_roundtrip.py
 
       - name: Install Tauri CLI
         working-directory: work
@@ -166,7 +155,7 @@ jobs:
       - name: Upload native installer checkpoint
         uses: actions/upload-artifact@v4
         with:
-          name: Trace-Native-Installers
+          name: Trace-v0.10-Native-Installers
           if-no-files-found: error
           retention-days: 14
           path: |
@@ -184,6 +173,8 @@ jobs:
         working-directory: work/setup-shell
         shell: pwsh
         run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Trace setup shell check failed with exit code $LASTEXITCODE" }
           cargo build --release --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw "Trace setup shell release build failed with exit code $LASTEXITCODE" }
 
@@ -198,17 +189,24 @@ jobs:
           if ($size -lt 1MB) { throw "TraceSetup.exe is unexpectedly small: $size bytes" }
           $hash = (Get-FileHash work/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "TraceSetup.exe  $hash" | Set-Content work/release/SHA256.txt
+          @"
+          Trace 0.10.0 Windows functional release candidate
+          Source commit: ${{ github.sha }}
+          Workflow run: ${{ github.run_id }}
+          TraceSetup.exe SHA256: $hash
+          "@ | Set-Content work/release/BUILD-MANIFEST.txt
           Write-Host "TraceSetup.exe $size bytes SHA256=$hash"
 
       - name: Upload Windows release
         uses: actions/upload-artifact@v4
         with:
-          name: Trace-Windows-Release
+          name: Trace-v0.10-Windows-Release
           if-no-files-found: error
           retention-days: 14
           path: |
             work/release/TraceSetup.exe
             work/release/SHA256.txt
+            work/release/BUILD-MANIFEST.txt
             work/src-tauri/target/release/Trace.exe
             work/src-tauri/target/release/bundle/nsis/*.exe
             work/src-tauri/target/release/bundle/msi/*.msi
@@ -222,10 +220,10 @@ jobs:
           run_number=${{ github.run_number }}
           source_sha=${{ github.sha }}
           result=${{ job.status }}
-          workflow=Trace Windows v2 release candidate
-          "@ | Set-Content build-status/windows-v2-main.txt
-          git add build-status/windows-v2-main.txt
+          workflow=Trace Windows v0.10 functional release candidate
+          "@ | Set-Content build-status/windows-v010-main.txt
+          git add build-status/windows-v010-main.txt
           if (git status --porcelain) {
-            git commit -m 'ci: record Windows v2 main build [skip ci]'
+            git commit -m 'ci: record Windows v0.10 build [skip ci]'
             git push origin HEAD:main
           }
