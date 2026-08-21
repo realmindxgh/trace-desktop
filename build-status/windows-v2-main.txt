@@ -1,5 +1,5 @@
 run_id=32464018988
 run_number=6
 source_sha=7b183741db4c396d09bbe4c8028b6c1e953d937d
-result=running
+result=failure
 workflow=Trace Windows v2 release candidate
