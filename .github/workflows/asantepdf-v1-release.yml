@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: asantepdf-v1-release
+  cancel-in-progress: true
+
 jobs:
   release:
     runs-on: windows-latest
@@ -109,6 +113,7 @@ jobs:
 
       - name: Publish run status
         if: always()
+        continue-on-error: true
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force asantepdf-ci-status | Out-Null
@@ -123,4 +128,5 @@ jobs:
           git add asantepdf-ci-status/latest.txt
           if (git diff --cached --quiet) { exit 0 }
           git commit -m 'ci: record AsantePDF Windows run [skip ci]'
+          git pull --rebase origin asantepdf-v1-ci
           git push origin HEAD:asantepdf-v1-ci
