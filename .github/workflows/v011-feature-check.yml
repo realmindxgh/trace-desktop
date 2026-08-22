@@ -1,0 +1,125 @@
+name: Trace v0.11 imports and display checkpoint
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/v011-feature-check.yml'
+      - 'bootstrap/v011/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trace-v011-feature-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish checkpoint run ID
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.11 imports and display checkpoint
+          "@ | Set-Content build-status/v011-feature-check.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v011-feature-check.txt
+          git commit -m 'ci: record v0.11 checkpoint run [skip ci]'
+          git push origin HEAD:main
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct verified v0.10 source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v2/part* | Sort-Object Name
+          if ($parts.Count -ne 8) { throw "Incomplete Trace base bootstrap." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($b64))
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw 'Trace base hash mismatch.' }
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
+          $parts=Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "v0.10 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          if ((Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw 'v0.10 overlay hash mismatch.' }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Could not apply v0.10 overlay.' }
+          New-Item -ItemType Directory -Force -Path work/tests | Out-Null
+          foreach ($test in @('schema_contract.py','v07_installer.py','v08_release.py','v09_release.py')) { Copy-Item "bootstrap/v010/tests/$test" "work/tests/$test" -Force }
+
+      - name: Apply v0.11 imports and display overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v011/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Incomplete v0.11 overlay. Expected 2 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 15296) { throw "v0.11 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6cd4bdd47a095341ba6151d6addb73f47a005ad57110d3ade443449f9e9f40f2') { throw "v0.11 overlay hash mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 overlay application failed.' }
+
+      - name: Source contracts
+        working-directory: work
+        run: |
+          node --check src/app.js
+          python tests/schema_contract.py
+          python tests/v10_functional.py
+          python tests/v11_imports_display.py
+
+      - name: Rust compile and tests
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Upload reconstructed v0.11 checkpoint source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-Imports-Display-Checkpoint-Source
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/src/**
+            work/src-tauri/src/**
+            work/src-tauri/Cargo.toml
+            work/database/**
+            work/tests/v11_imports_display.py
