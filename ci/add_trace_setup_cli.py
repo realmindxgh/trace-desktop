@@ -1,0 +1,93 @@
+from pathlib import Path
+
+path = Path('work/setup-shell/src-tauri/src/main.rs')
+text = path.read_text(encoding='utf-8')
+
+if '--silent-install' in text and 'fn silent_install(' in text:
+    print('Trace setup silent CLI already present')
+    raise SystemExit(0)
+
+marker = '\nfn main(){\n'
+if marker not in text:
+    raise SystemExit('Could not locate Trace setup main() marker')
+
+helpers = r'''
+fn arg_value(args:&[String],name:&str)->Option<String>{
+  args.iter().position(|a|a==name).and_then(|i|args.get(i+1)).cloned()
+}
+
+fn silent_install(options:InstallOptions)->Result<InstallResult,String>{
+  if INSTALLING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return Err("Trace Setup is already installing.".into());}
+  let _guard=InstallGuard;
+  if PAYLOAD.len()<1024 || !PAYLOAD.starts_with(b"MZ"){
+    return Err("This build does not contain the Windows installer payload.".into());
+  }
+  let pf=preflight_for(options.install_dir.clone());
+  if !pf.can_install{return Err(pf.message);}
+  let target=pf.install_dir.clone();
+  let mode=pf.mode.clone();
+  log_line(&format!("Starting silent {} into {}",mode,target));
+  let work=env::temp_dir().join(format!("TraceSetup-{}",Uuid::new_v4()));
+  fs::create_dir_all(&work).map_err(|e|e.to_string())?;
+  let payload=work.join("TracePayload.exe");
+  fs::write(&payload,PAYLOAD).map_err(|e|e.to_string())?;
+  let status=Command::new(&payload).arg("/S").arg(format!("/D={target}")).status().map_err(|e|format!("Could not start the Trace payload: {e}"))?;
+  let _=fs::remove_file(&payload);let _=fs::remove_dir(&work);
+  if !status.success(){
+    log_line(&format!("Silent payload failed with status {}",status.code().unwrap_or(-1)));
+    return Err(format!("The Windows installer exited with status {}.",status.code().unwrap_or(-1)));
+  }
+  let exe=PathBuf::from(&target).join("Trace.exe");
+  if !exe.exists(){return Err("Trace installation finished, but Trace.exe could not be verified at the selected location.".into());}
+  let shortcut_result=configure_desktop_shortcut(&target,options.create_shortcuts);
+  if let Err(ref e)=shortcut_result{log_line(&format!("Shortcut warning: {e}"));}
+  if options.launch_after{Command::new(&exe).spawn().map_err(|e|format!("Trace installed but could not be launched: {e}"))?;}
+  log_line(&format!("Trace silent {} completed successfully",mode));
+  Ok(InstallResult{success:true,message:shortcut_result.err().unwrap_or_else(||"Trace installed successfully.".into()),install_dir:target,mode,desktop_shortcut:options.create_shortcuts})
+}
+
+fn silent_uninstall(install_dir:Option<String>)->Result<UninstallResult,String>{
+  if INSTALLING.compare_exchange(false,true,Ordering::SeqCst,Ordering::SeqCst).is_err(){return Err("Trace Setup is already busy.".into());}
+  let _guard=InstallGuard;
+  let target=install_dir.filter(|s|!s.trim().is_empty()).unwrap_or_else(default_dir);
+  let uninstall=find_uninstaller(&target).ok_or("Trace's Windows uninstaller could not be found. Repair the installation first, then try uninstalling again.")?;
+  log_line(&format!("Starting silent uninstall from {}",uninstall.to_string_lossy()));
+  let status=Command::new(&uninstall).arg("/S").status().map_err(|e|format!("Could not start the Trace uninstaller: {e}"))?;
+  if !status.success(){return Err(format!("The Trace uninstaller exited with status {}.",status.code().unwrap_or(-1)));}
+  let exe=PathBuf::from(&target).join("Trace.exe");
+  if exe.exists(){return Err("Windows reported that uninstall finished, but Trace.exe is still present. No research project data was removed.".into());}
+  let _=configure_desktop_shortcut(&target,false);
+  log_line("Trace silent uninstall completed. Research projects and backups were preserved.");
+  Ok(UninstallResult{success:true,message:"Trace was removed. Local research projects and verified backups were preserved.".into(),install_dir:target,projects_preserved:true})
+}
+'''
+
+main_prefix = r'''fn main(){
+  let args:Vec<String>=env::args().skip(1).collect();
+  if args.iter().any(|a|a=="--silent-install"){
+    let options=InstallOptions{
+      install_dir:arg_value(&args,"--install-dir"),
+      create_shortcuts:args.iter().any(|a|a=="--create-shortcut"),
+      launch_after:args.iter().any(|a|a=="--launch-after"),
+    };
+    match silent_install(options){
+      Ok(result)=>{println!("TRACE_SETUP_SILENT_INSTALL_OK={}",result.install_dir);return;},
+      Err(error)=>{eprintln!("TRACE_SETUP_SILENT_INSTALL_ERROR={error}");std::process::exit(1);}
+    }
+  }
+  if args.iter().any(|a|a=="--silent-uninstall"){
+    match silent_uninstall(arg_value(&args,"--install-dir")){
+      Ok(result)=>{println!("TRACE_SETUP_SILENT_UNINSTALL_OK={}",result.install_dir);return;},
+      Err(error)=>{eprintln!("TRACE_SETUP_SILENT_UNINSTALL_ERROR={error}");std::process::exit(1);}
+    }
+  }
+'''
+
+text = text.replace(marker, '\n' + helpers + '\n' + main_prefix, 1)
+path.write_text(text, encoding='utf-8')
+
+check = path.read_text(encoding='utf-8')
+for token in ('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','fn silent_install('):
+    if token not in check:
+        raise SystemExit(f'Missing injected token: {token}')
+print('Trace setup silent CLI injected successfully')
