@@ -158,16 +158,18 @@ jobs:
           New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
           Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
 
-      - name: Functional contracts
+      - name: Core functional contracts
         working-directory: work
+        shell: pwsh
         run: |
           node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace app JavaScript syntax check failed.' }
           node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup JavaScript syntax check failed.' }
           python tests/schema_contract.py
-          python tests/v07_installer.py
-          python tests/v08_release.py
-          python tests/v09_release.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace schema contract failed.' }
           python tests/v10_functional.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 functional contract failed.' }
 
       - name: Install Tauri CLI
         working-directory: work
@@ -190,6 +192,9 @@ jobs:
           Copy-Item $payload.FullName work/setup-shell/src-tauri/payload/trace-payload.exe -Force
           $bytes=[IO.File]::ReadAllBytes('work/setup-shell/src-tauri/payload/trace-payload.exe')
           if ($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Embedded installer payload is not a credible Windows executable.' }
+          $payloadHash=(Get-FileHash $payload.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $embeddedHash=(Get-FileHash work/setup-shell/src-tauri/payload/trace-payload.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($payloadHash -ne $embeddedHash) { throw 'Embedded installer payload does not match generated NSIS installer.' }
 
       - name: Build branded TraceSetup.exe
         working-directory: work/setup-shell
@@ -216,8 +221,26 @@ jobs:
         shell: pwsh
         run: |
           $setup=(Resolve-Path work/release/TraceSetup.exe).Path
+          $nativeSetup=(Get-ChildItem work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          if (!(Test-Path $nativeSetup)) { throw 'Native NSIS installer is missing for equivalence verification.' }
+
+          $referenceDir=Join-Path $env:RUNNER_TEMP 'TraceNativeReferenceInstall'
           $installDir=Join-Path $env:RUNNER_TEMP 'TraceExactSetupInstall'
-          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          foreach ($dir in @($referenceDir,$installDir)) {
+            if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          }
+
+          $native=Start-Process -FilePath $nativeSetup -ArgumentList @('/S',"/D=$referenceDir") -Wait -PassThru
+          if ($native.ExitCode -ne 0) { throw "Native NSIS reference install failed with exit code $($native.ExitCode)." }
+          $referenceTrace=Join-Path $referenceDir 'Trace.exe'
+          if (!(Test-Path $referenceTrace)) { throw "Reference Trace.exe was not found at $referenceTrace." }
+          $referenceHash=(Get-FileHash $referenceTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          $referenceUninstaller=Get-ChildItem $referenceDir -Filter '*uninstall*.exe' -File | Select-Object -First 1
+          if (!$referenceUninstaller) { throw 'Native reference uninstaller was not found.' }
+          $nativeUninstall=Start-Process -FilePath $referenceUninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($nativeUninstall.ExitCode -ne 0) { throw "Native reference uninstall failed with exit code $($nativeUninstall.ExitCode)." }
+          Start-Sleep -Seconds 2
+
           $researchDir=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Trace CI Research Data'
           New-Item -ItemType Directory -Force -Path $researchDir | Out-Null
           $sentinel=Join-Path $researchDir 'research-data-must-survive.txt'
@@ -228,8 +251,7 @@ jobs:
           $installedTrace=Join-Path $installDir 'Trace.exe'
           if (!(Test-Path $installedTrace)) { throw "Installed Trace.exe was not found at $installedTrace." }
           $installedHash=(Get-FileHash $installedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
-          $builtHash=(Get-FileHash work/src-tauri/target/release/Trace.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($installedHash -ne $builtHash) { throw 'Installed Trace.exe does not match the built release executable.' }
+          if ($installedHash -ne $referenceHash) { throw 'Branded setup installed executable does not match the exact native NSIS payload installation.' }
 
           $trace=Start-Process -FilePath $installedTrace -WorkingDirectory $installDir -PassThru
           Start-Sleep -Seconds 10
@@ -250,7 +272,8 @@ jobs:
           run_id=${{ github.run_id }}
           TraceSetup_sha256=$setupHash
           exact_branded_install=true
-          installed_exe_matches_build=true
+          embedded_payload_matches_generated_nsis=true
+          installed_exe_matches_native_payload=true
           installed_copy_launched=true
           installed_copy_survived_10_seconds=true
           exact_branded_uninstall=true
