@@ -1,0 +1,260 @@
+name: Trace v0.11 installer v2 GUI verification
+
+on:
+  push:
+    branches:
+      - trace-v011-installer-v2
+    paths:
+      - '.github/workflows/windows-v011-installer-v2.yml'
+      - 'bootstrap/v011installer2/**'
+      - 'bootstrap/v011installer2click/**'
+      - 'ci/add_trace_setup_cli_v2.py'
+      - 'ci/v011_installer_v2_contract.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: trace-v011-installer-v2
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout installer v2 control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v011-installer-v2
+          path: control
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download exact PDF-green v0.11 source
+        uses: actions/download-artifact@v4
+        with:
+          name: Trace-v0.11-PDF-Text-Windows-Green-Source
+          path: source/work
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32581268832
+
+      - name: Verify source identity
+        shell: pwsh
+        run: |
+          foreach ($file in @(
+            'source/work/package.json',
+            'source/work/setup-shell/package.json',
+            'source/work/setup-shell/src/app.js',
+            'source/work/setup-shell/src/styles.css',
+            'source/work/setup-shell/src-tauri/src/main.rs',
+            'source/work/setup-shell/src-tauri/tauri.conf.json'
+          )) {
+            if (!(Test-Path $file)) { throw "PDF-green source artifact is incomplete: $file" }
+          }
+          $appVersion=(Get-Content source/work/package.json -Raw | ConvertFrom-Json).version
+          $setupVersion=(Get-Content source/work/setup-shell/package.json -Raw | ConvertFrom-Json).version
+          if ($appVersion -ne '0.11.0' -or $setupVersion -ne '0.11.0') {
+            throw "Unexpected v0.11 source identity: app=$appVersion setup=$setupVersion"
+          }
+
+      - name: Apply installer v2 redesign and functional repair
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/v011installer2/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete installer v2 overlay. Expected 4 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 20512) { throw "Installer v2 overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '572c0d31f73db60600a1e374e5f821812d2bd417853ce30832e718a061042307') { throw "Installer v2 overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress installer v2 overlay.' }
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne '7eaba8d93c223f048a658821e35a8e0cd0634997872237a79e198e9e3d27383b') { throw "Installer v2 patch SHA-256 mismatch: $patchHash" }
+          Push-Location source/work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer v2 overlay preflight failed.' }
+          git apply $patch
+          $applyExit=$LASTEXITCODE
+          Pop-Location
+          if ($applyExit -ne 0) { throw 'Installer v2 overlay application failed.' }
+
+      - name: Apply real primary-button GUI gate overlay
+        shell: pwsh
+        run: |
+          $b64=Get-Content control/bootstrap/v011installer2click/part00 -Raw
+          if ($b64.Length -ne 536) { throw "GUI click overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2-click.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '3b3da6f386bd33876aab699b09d790b69508a708ce95260d3ec021d6db4d7021') { throw "GUI click overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2-click.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress GUI click overlay.' }
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne '2e24789d17ed519e1184af25e07039434be2c3d4f1cff699730bc7e375b01a5c') { throw "GUI click patch SHA-256 mismatch: $patchHash" }
+          Push-Location source/work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'GUI click overlay preflight failed.' }
+          git apply $patch
+          $applyExit=$LASTEXITCODE
+          Pop-Location
+          if ($applyExit -ne 0) { throw 'GUI click overlay application failed.' }
+
+      - name: Inject shared-core silent verification CLI
+        shell: pwsh
+        working-directory: source
+        run: |
+          python ../control/ci/add_trace_setup_cli_v2.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inject installer v2 silent verification CLI.' }
+
+      - name: Installer v2 contracts
+        shell: pwsh
+        run: |
+          node --check source/work/setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Installer v2 JavaScript syntax check failed.' }
+          python control/ci/v011_installer_v2_contract.py source/work
+          if ($LASTEXITCODE -ne 0) { throw 'Installer v2 contract failed.' }
+
+      - name: Download exact previously verified native release
+        uses: actions/download-artifact@v4
+        with:
+          name: Trace-v0.11-Exact-Verified-Windows-Release
+          path: verified-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32582256355
+
+      - name: Stage unchanged verified Trace payload
+        shell: pwsh
+        run: |
+          $payload='verified-release/src-tauri/target/release/bundle/nsis/Trace_0.11.0_x64-setup.exe'
+          $nativeExe='verified-release/src-tauri/target/release/Trace.exe'
+          if (!(Test-Path $payload) -or !(Test-Path $nativeExe)) { throw 'Verified v0.11 native release payload is incomplete.' }
+          $bytes=[IO.File]::ReadAllBytes($payload)
+          if ($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Verified native payload is not a credible Windows executable.' }
+          New-Item -ItemType Directory -Force -Path source/work/setup-shell/src-tauri/payload | Out-Null
+          Copy-Item $payload source/work/setup-shell/src-tauri/payload/trace-payload.exe -Force
+          $staged=(Get-FileHash source/work/setup-shell/src-tauri/payload/trace-payload.exe -Algorithm SHA256).Hash
+          $original=(Get-FileHash $payload -Algorithm SHA256).Hash
+          if ($staged -ne $original) { throw 'Staged installer payload changed.' }
+
+      - name: Build repaired TraceSetup.exe
+        shell: pwsh
+        working-directory: source/work/setup-shell
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Tauri CLI for installer v2.' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Installer v2 frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Installer v2 native cargo check failed.' }
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Installer v2 release build failed.' }
+
+      - name: Exercise actual GUI primary-button installation path
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path 'source/work/setup-shell/src-tauri/target/release/trace-setup.exe').Path
+          $guiDir=Join-Path $env:RUNNER_TEMP 'TraceInstallerV2GuiInstall'
+          $resultPath=Join-Path $env:RUNNER_TEMP 'trace-installer-v2-gui-result.json'
+          if (Test-Path $guiDir) { Remove-Item $guiDir -Recurse -Force }
+          if (Test-Path $resultPath) { Remove-Item $resultPath -Force }
+
+          $researchDir=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Trace v0.11 Installer V2 CI Research Data'
+          New-Item -ItemType Directory -Force -Path $researchDir | Out-Null
+          $sentinel=Join-Path $researchDir 'research-data-must-survive.txt'
+          'Trace installer v2 research preservation sentinel' | Set-Content $sentinel
+
+          $env:TRACE_CI_GUI_INSTALL_DIR=$guiDir
+          $env:TRACE_CI_GUI_RESULT=$resultPath
+          $process=Start-Process -FilePath $setup -PassThru
+          $deadline=(Get-Date).AddMinutes(3)
+          while ((Get-Date) -lt $deadline -and !(Test-Path $resultPath) -and !$process.HasExited) {
+            Start-Sleep -Seconds 1
+            $process.Refresh()
+          }
+          if (!(Test-Path $resultPath)) {
+            if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
+            throw 'The real Trace Setup WebView did not report a GUI installation result.'
+          }
+          $guiResult=Get-Content $resultPath -Raw | ConvertFrom-Json
+          if (!$guiResult.success) { throw "The real GUI install button path failed: $($guiResult.message)" }
+          if ($guiResult.version -ne '0.11.0') { throw "GUI reported the wrong setup version: $($guiResult.version)" }
+          if ($guiResult.message -ne 'gui_install_complete') { throw "Unexpected GUI verification marker: $($guiResult.message)" }
+
+          $closeDeadline=(Get-Date).AddSeconds(20)
+          while ((Get-Date) -lt $closeDeadline -and !$process.HasExited) {
+            Start-Sleep -Milliseconds 500
+            $process.Refresh()
+          }
+          if (!$process.HasExited) {
+            Stop-Process -Id $process.Id -Force
+            throw 'Trace Setup completed GUI installation but did not close normally.'
+          }
+          Remove-Item Env:TRACE_CI_GUI_INSTALL_DIR -ErrorAction SilentlyContinue
+          Remove-Item Env:TRACE_CI_GUI_RESULT -ErrorAction SilentlyContinue
+
+          $installedTrace=Join-Path $guiDir 'Trace.exe'
+          if (!(Test-Path $installedTrace)) { throw 'GUI path reported success but Trace.exe is missing.' }
+          $installedHash=(Get-FileHash $installedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          $provenHash=(Get-FileHash 'verified-release/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installedHash -ne $provenHash) { throw 'GUI path did not install the exact previously verified Trace.exe.' }
+
+          $trace=Start-Process -FilePath $installedTrace -WorkingDirectory $guiDir -PassThru
+          Start-Sleep -Seconds 10
+          if ($trace.HasExited) { throw "GUI-installed Trace.exe exited unexpectedly with code $($trace.ExitCode)." }
+          Stop-Process -Id $trace.Id -Force
+          Start-Sleep -Seconds 2
+
+          & $setup --silent-uninstall --install-dir $guiDir
+          if ($LASTEXITCODE -ne 0) { throw "Shared-core uninstall failed with exit code $LASTEXITCODE." }
+          Start-Sleep -Seconds 3
+          if (Test-Path $installedTrace) { throw 'Trace.exe remains after shared-core uninstall.' }
+          if (!(Test-Path $sentinel)) { throw 'Research-data sentinel was removed during installer v2 uninstall.' }
+
+          New-Item -ItemType Directory -Force -Path candidate | Out-Null
+          Copy-Item $setup candidate/TraceSetup.exe -Force
+          $setupHash=(Get-FileHash candidate/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TraceSetup.exe  $setupHash" | Set-Content candidate/SHA256.txt
+          @"
+          TRACE_INSTALLER_V2_GUI_VERIFIED=true
+          run_id=${{ github.run_id }}
+          version=0.11.0
+          gui_primary_button_path=passed
+          tauri_event_acl=passed
+          installed_trace_exact_hash_match=passed
+          installed_copy_launch=passed
+          shared_core_uninstall=passed
+          research_data_preserved=passed
+          stale_0_9_0_removed=passed
+          layout_contract_no_page_scroll=passed
+          setup_sha256=$setupHash
+          installed_trace_sha256=$provenHash
+          source_run=32581268832
+          native_release_run=32582256355
+          "@ | Set-Content candidate/GUI-VERIFICATION.txt
+
+      - name: Upload installer v2 Windows-green candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-Installer-v2-Windows-Green
+          path: candidate
+          if-no-files-found: error
