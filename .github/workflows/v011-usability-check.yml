@@ -149,8 +149,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 JavaScript syntax check failed.' }
           python tests/schema_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Trace schema contract failed.' }
-          python tests/v10_functional.py
-          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 regression contract failed.' }
+          $compat='tests/v10_compat.py'
+          (Get-Content tests/v10_functional.py -Raw).Replace("'0.10.0'","'0.11.0'") | Set-Content $compat
+          python $compat
+          $compatExit=$LASTEXITCODE
+          Remove-Item $compat -Force
+          if ($compatExit -ne 0) { throw 'Trace v0.10 behavioral regression contract failed under v0.11.' }
           python tests/v11_imports_display.py
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 import/display contract failed.' }
           python tests/v11_usability.py
@@ -198,6 +202,7 @@ jobs:
           result=${{ job.status }}
           workflow=Trace v0.11 usability checkpoint
           "@ | Set-Content build-status/v011-usability-check.txt
+          git stash push --include-untracked -m 'trace-ci-worktree' -- work | Out-Null
           git pull --rebase origin main
           git add build-status/v011-usability-check.txt
           if (git status --porcelain) {
