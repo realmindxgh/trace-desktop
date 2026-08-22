@@ -67,26 +67,91 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Download exact PDF-green v0.11 source
-        uses: actions/download-artifact@v4
+      - name: Checkout proven transcription checkpoint control
+        uses: actions/checkout@v4
         with:
-          name: Trace-v0.11-PDF-Text-Windows-Green-Source
-          path: source/work
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 32581268832
+          ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
+          path: source
 
-      - name: Verify source identity
+      - name: Inject corrected transcription checkpoint bytes
+        shell: pwsh
+        run: |
+          Copy-Item control/bootstrap/v011transcribe/part00 source/bootstrap/v011transcribe/part00 -Force
+          Copy-Item control/bootstrap/v011transcribe/part01 source/bootstrap/v011transcribe/part01 -Force
+          $wf='source/.github/workflows/v011-transcription-check.yml'
+          $text=Get-Content $wf -Raw
+          $text=$text.Replace('17960','18928')
+          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
+          Set-Content $wf $text
+
+      - name: Reconstruct exact proven v0.11 source layers
+        shell: pwsh
+        working-directory: source
+        run: |
+          python -m pip install pyyaml
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install PyYAML.' }
+          @'
+          import pathlib, subprocess, tempfile, yaml
+          root = pathlib.Path.cwd()
+          workflow = yaml.safe_load((root / '.github/workflows/v011-transcription-check.yml').read_text(encoding='utf-8'))
+          steps = workflow['jobs']['check']['steps']
+          wanted = [
+              'Reconstruct verified Trace base source',
+              'Apply verified v0.10 overlay',
+              'Apply verified v0.11 imports and display overlay',
+              'Apply verified v0.11 usability overlay',
+              'Apply verified v0.11 local transcription overlay',
+              'Prepare Windows assets',
+          ]
+          by_name = {step.get('name'): step for step in steps}
+          for name in wanted:
+              step = by_name[name]
+              cwd = root / step.get('working-directory', '.')
+              with tempfile.NamedTemporaryFile('w', suffix='.ps1', encoding='utf-8', delete=False) as handle:
+                  handle.write("$ErrorActionPreference = 'Stop'\n")
+                  handle.write(step['run'])
+                  script = handle.name
+              print(f'INSTALLER V2 REPLAY STEP: {name}', flush=True)
+              subprocess.run(['pwsh','-NoProfile','-File',script], cwd=cwd, check=True)
+          '@ | Set-Content replay_installer_v2_layers.py
+          python replay_installer_v2_layers.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not reconstruct proven v0.11 source layers.' }
+
+      - name: Apply corrected Windows-green PDF text overlay
+        shell: pwsh
+        working-directory: source
+        run: |
+          $parts=Get-ChildItem ../control/bootstrap/v011pdf/part* | Sort-Object Name
+          if ($parts.Count -ne 1) { throw "Incomplete PDF overlay. Expected 1 part, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 8556) { throw "PDF overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128') { throw "PDF overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress PDF overlay.' }
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne '8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0') { throw "PDF patch SHA-256 mismatch: $patchHash" }
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay preflight failed in installer v2 reconstruction.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay application failed in installer v2 reconstruction.' }
+
+      - name: Verify full source identity
         shell: pwsh
         run: |
           foreach ($file in @(
             'source/work/package.json',
             'source/work/setup-shell/package.json',
+            'source/work/setup-shell/scripts/build.mjs',
             'source/work/setup-shell/src/app.js',
             'source/work/setup-shell/src/styles.css',
             'source/work/setup-shell/src-tauri/src/main.rs',
             'source/work/setup-shell/src-tauri/tauri.conf.json'
           )) {
-            if (!(Test-Path $file)) { throw "PDF-green source artifact is incomplete: $file" }
+            if (!(Test-Path $file)) { throw "Reconstructed v0.11 source is incomplete: $file" }
           }
           $appVersion=(Get-Content source/work/package.json -Raw | ConvertFrom-Json).version
           $setupVersion=(Get-Content source/work/setup-shell/package.json -Raw | ConvertFrom-Json).version
