@@ -1,0 +1,77 @@
+name: AsantePDF Fast Compile Gate
+
+on:
+  push:
+    branches: [asantepdf-v1-ci]
+    paths:
+      - '.github/workflows/asantepdf-introspect-compile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  compile:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct current source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Restore-B64Archive([string[]]$Files,[int]$Count,[int]$Length,[string]$Sha,[string]$Archive,[string]$Target) {
+            $parts = Get-Item $Files | Sort-Object Name
+            if ($parts.Count -ne $Count) { throw "Expected $Count chunks for ${Archive}; found $($parts.Count)" }
+            $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+            if ($b64.Length -ne $Length) { throw "Payload length mismatch for ${Archive}: $($b64.Length)" }
+            $path = Join-Path $env:RUNNER_TEMP $Archive
+            [IO.File]::WriteAllBytes($path,[Convert]::FromBase64String($b64))
+            if ((Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Sha) { throw "SHA mismatch for ${Archive}" }
+            tar -xJf $path -C $Target
+          }
+          New-Item -ItemType Directory -Force work-compile | Out-Null
+          $baseParts = @((Get-ChildItem 'pdf-rescue-build-payload/part-*.b64').FullName) + @((Get-ChildItem 'pdf-rescue-build-tail3k/tail-*.b64').FullName)
+          Restore-B64Archive $baseParts 18 87192 'ea150483853ad62e544874f3831bb1005d7060af233a56ad6c23eaf75309a955' 'base.tar.xz' 'work-compile'
+          Restore-B64Archive @((Get-ChildItem 'pdf-rescue-fix1/fix1-*.b64').FullName) 4 9104 'b11619a5ab7c433b5802151b85865a95254d43f5bcb48a5cf461b6f0dc5d227b' 'fix1.tar.xz' 'work-compile'
+          Restore-B64Archive @((Get-ChildItem 'pdf-rescue-fix2/fix2-*.b64').FullName) 5 13136 '79e99563a8a11f329cf3d4d4c597620ee494920d421f211352a870052d35a858' 'fix2.tar.xz' 'work-compile'
+          Restore-B64Archive @((Get-ChildItem 'asantepdf-v1/code-*.b64').FullName) 9 59868 'be179526d815a69ef59a584d6643b5b18b5cb318f1c57170564e7544f7d2aa91' 'v1.tar.xz' 'work-compile'
+          Restore-B64Archive @((Get-ChildItem 'asantepdf-fix3/fix3.b64').FullName) 1 2236 'b8a1815f03874facaea3459b055688fef6ade330ba0573c594f5a954124364e9' 'fix3.tar.xz' 'work-compile'
+          Restore-B64Archive @((Get-ChildItem 'asantepdf-fix4/fix4-*.b64').FullName) 1 6648 '74f7f95a8751b6b4df5c82bde4cb77f8eca89b316c8d95be7f4e29d1b300c34f' 'fix4.tar.xz' 'work-compile'
+          Restore-B64Archive @((Get-ChildItem 'asantepdf-fix5/fix5-*.b64').FullName) 1 3100 'b90935faf9bb14ae0a40bef5f4b8798ca03e5b411d7c9ed5e5043dcc9bc63046' 'fix5.tar.xz' 'work-compile'
+          & (Resolve-Path 'asantepdf-fix6/apply-fix6.ps1') -Root (Resolve-Path 'work-compile')
+          Copy-Item 'work-compile/assets/pdf-rescue.ico' 'work-compile/assets/asantepdf.ico' -Force
+          $projectPath='work-compile/src/PdfRescue.App/PdfRescue.App.csproj'
+          $project=Get-Content $projectPath -Raw
+          $project=$project -replace '(?m)^\s*<Resource Include="\.\.\\\.\.\\assets\\asantepdf-(?:icon|brand)\.png"[^\r\n]*\r?\n',''
+          if ($project -notmatch 'Resource Include="\.\.\\\.\.\\assets\\asantepdf\.ico"') { $project=$project -replace '</Project>','<ItemGroup><Resource Include="..\..\assets\asantepdf.ico" Link="assets\asantepdf.ico" /></ItemGroup></Project>' }
+          Set-Content $projectPath $project -Encoding UTF8
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: work-compile/global.json
+      - name: Restore and compile, recording result
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Continue'
+          $restore = (& dotnet restore 'work-compile/PdfRescue.sln' 2>&1 | Out-String)
+          $restoreCode=$LASTEXITCODE
+          if ($restoreCode -eq 0) {
+            $build = (& dotnet build 'work-compile/PdfRescue.sln' -c Release -p:Platform=x64 --no-restore 2>&1 | Out-String)
+            $buildCode=$LASTEXITCODE
+          } else { $build='Build skipped because restore failed.'; $buildCode=999 }
+          New-Item -ItemType Directory -Force asantepdf-debug/compile-gate | Out-Null
+          @"
+          source_sha=${{ github.sha }}
+          restore_exit=$restoreCode
+          build_exit=$buildCode
+
+          === RESTORE ===
+          $restore
+          === BUILD ===
+          $build
+          "@ | Set-Content asantepdf-debug/compile-gate/latest.txt
+          git config user.name asantepdf-build-bot
+          git config user.email actions@users.noreply.github.com
+          git add asantepdf-debug/compile-gate/latest.txt
+          git commit -m 'ci: record fast AsantePDF compile gate [skip ci]'
+          git push origin HEAD:asantepdf-v1-ci
