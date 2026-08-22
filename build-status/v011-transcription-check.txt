@@ -1,5 +1,5 @@
 run_id=32574162037
 run_number=2
 source_sha=ad3bfb753ec5672efb93ff62c51496ae039ab4ef
-result=running
+result=cancelled
 workflow=Trace v0.11 local transcription checkpoint
