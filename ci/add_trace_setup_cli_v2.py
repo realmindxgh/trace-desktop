@@ -77,6 +77,27 @@ if "document.querySelector('#next')?.click()" not in app:
     git_apply_to_work(click_patch, 'real primary-button GUI gate overlay')
     app = APP_JS.read_text(encoding='utf-8')
 
+# Tauri serializes the Rust CI request field as `install_dir`. The test hook was
+# originally written in frontend camelCase, which allowed the real GUI path to
+# install successfully into the default directory while the outer gate checked
+# a different requested directory. Accept Rust snake_case explicitly and keep
+# camelCase only as a compatibility fallback. This changes only the CI hook;
+# the normal user-selected install path remains untouched.
+if 'state.ciGui' in app:
+    fixed = app.replace(
+        'state.ciGui?.installDir',
+        '(state.ciGui?.install_dir||state.ciGui?.installDir)',
+    ).replace(
+        'state.ciGui.installDir',
+        '(state.ciGui.install_dir||state.ciGui.installDir)',
+    )
+    if fixed != app:
+        print('Normalized installer v2 CI GUI install-directory handoff to Rust snake_case.')
+        APP_JS.write_text(fixed, encoding='utf-8')
+        app = fixed
+    if 'state.ciGui.install_dir' not in app and 'state.ciGui?.install_dir' not in app:
+        raise SystemExit('Installer v2 CI GUI hook does not consume the Rust install_dir field.')
+
 text = MAIN_RS.read_text(encoding='utf-8')
 
 if '--silent-install' in text and 'fn silent_install(' in text:
