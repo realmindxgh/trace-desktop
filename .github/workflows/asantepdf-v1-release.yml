@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release:
@@ -68,12 +68,8 @@ jobs:
           if ($overlayHash -ne 'be179526d815a69ef59a584d6643b5b18b5cb318f1c57170564e7544f7d2aa91') { throw "AsantePDF overlay SHA mismatch: $overlayHash" }
           tar -xJf $overlayArc -C work-asantepdf
 
-          # First compile gate uses the already-validated icon binary as a carrier asset.
-          # The final Ghana-inspired icon is substituted after the UI/compiler gate is green.
           Copy-Item 'work-asantepdf/assets/pdf-rescue.ico' 'work-asantepdf/assets/asantepdf.ico' -Force
 
-          # Remove PNG branding resources that are not part of this compact source carrier,
-          # and embed asantepdf.ico as the WPF/window resource as well as the executable icon.
           $projectPath = 'work-asantepdf/src/PdfRescue.App/PdfRescue.App.csproj'
           $project = Get-Content $projectPath -Raw
           $project = $project -replace '(?m)^\s*<Resource Include="\.\.\\\.\.\\assets\\asantepdf-(?:icon|brand)\.png"[^\r\n]*\r?\n', ''
@@ -142,3 +138,21 @@ jobs:
             work-asantepdf/dist/release-sample.pdf
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Publish run status
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path asantepdf-ci-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          "@ | Set-Content asantepdf-ci-status/latest.txt
+          git config user.name asantepdf-build-bot
+          git config user.email actions@users.noreply.github.com
+          git add asantepdf-ci-status/latest.txt
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'ci: record AsantePDF Windows run [skip ci]'
+          git push origin HEAD:asantepdf-v1-ci
