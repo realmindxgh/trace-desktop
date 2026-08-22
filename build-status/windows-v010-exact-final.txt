@@ -1,5 +1,8 @@
 run_id=32573706667
 run_number=3
 source_sha=e53a1094db3ff3f2c6fc9a4e9c8180ea1f780b51
-result=running
+result=success
 workflow=Trace Windows v0.10 exact installer verification
+verification=build+exact_branded_install+installed_copy_launch+exact_branded_uninstall+research_data_preserved
+artifact_id=9476369811
+artifact_digest=sha256:04b5ae7dcdcb618f0393c6823ce7e3c2ed644883fe07c9f2d4c049a0bf79173b
