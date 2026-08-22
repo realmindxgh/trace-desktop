@@ -37,3 +37,7 @@ $text = $text.Replace('Path.Combine(tempDir, $"step-{i:000}.pdf")','IOPath.Combi
 Set-Content -Path $textSearch -Value $text -Encoding UTF8
 
 Write-Host 'AsantePDF compiler fix 6 applied.' -ForegroundColor Green
+
+$fix7 = Join-Path (Split-Path -Parent $PSScriptRoot) 'asantepdf-fix7\apply-fix7.ps1'
+if (-not (Test-Path $fix7)) { throw "AsantePDF fix 7 script not found: $fix7" }
+& $fix7 -Root $Root
