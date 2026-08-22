@@ -1,5 +1,7 @@
 run_id=32578266394
 run_number=5
 source_sha=cf50aa7725ade07d17cba864e827c2e53b30b176
-result=running
+result=failure
 workflow=Trace v0.11 transcription native Windows check
+failure_stage=reconstruction_helper
+note=Non-authoritative helper path; proven replay gate supersedes this run.
