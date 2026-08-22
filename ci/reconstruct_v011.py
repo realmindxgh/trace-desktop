@@ -24,6 +24,12 @@ LAYERS = [
     ("v011transcribe", 2, 17_960, "8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a"),
 ]
 
+V010_LEGACY_TESTS = (
+    "tests/v07_installer.py",
+    "tests/v08_release.py",
+    "tests/v09_release.py",
+)
+
 
 def read_parts(folder: Path, count: int, expected_len: int) -> bytes:
     parts = sorted(folder.glob("part*"))
@@ -41,18 +47,30 @@ def require_sha(data: bytes, expected: str, label: str) -> None:
         raise SystemExit(f"{label}: SHA-256 mismatch {actual}")
 
 
-def git_apply(patch: Path, *, v010: bool = False) -> None:
-    options = ["--directory=work"]
-    if v010:
-        options += [
-            "--exclude=tests/v07_installer.py",
-            "--exclude=tests/v08_release.py",
-            "--exclude=tests/v09_release.py",
-        ]
-    # Match the established Windows workflows exactly. git-apply's include/exclude
-    # path matching is sensitive to option parsing around --check on Windows.
-    subprocess.run(["git", "apply", "--check", *options, str(patch)], cwd=ROOT, check=True)
-    subprocess.run(["git", "apply", *options, str(patch)], cwd=ROOT, check=True)
+def strip_diff_sections(patch_bytes: bytes, excluded: tuple[str, ...]) -> bytes:
+    """Drop complete git-diff sections for paths restored from authoritative files later."""
+    text = patch_bytes.decode("utf-8")
+    pieces = text.split("diff --git ")
+    if len(pieces) == 1:
+        return patch_bytes
+    kept = [pieces[0]]
+    removed: set[str] = set()
+    for chunk in pieces[1:]:
+        header = chunk.splitlines()[0] if chunk else ""
+        match = next((path for path in excluded if f"a/{path} b/{path}" in header), None)
+        if match:
+            removed.add(match)
+            continue
+        kept.append("diff --git " + chunk)
+    missing = set(excluded) - removed
+    if missing:
+        raise SystemExit(f"v0.10 patch did not contain expected legacy test sections: {sorted(missing)}")
+    return "".join(kept).encode("utf-8")
+
+
+def git_apply(patch: Path) -> None:
+    subprocess.run(["git", "apply", "--check", "--directory=work", str(patch)], cwd=ROOT, check=True)
+    subprocess.run(["git", "apply", "--directory=work", str(patch)], cwd=ROOT, check=True)
 
 
 def reconstruct(include_transcription: bool) -> None:
@@ -78,18 +96,21 @@ def reconstruct(include_transcription: bool) -> None:
         compressed = read_parts(ROOT / "bootstrap" / name, count, expected_len)
         require_sha(compressed, expected_sha, name)
         patch_bytes = lzma.decompress(compressed)
+        if name == "v010":
+            patch_bytes = strip_diff_sections(patch_bytes, V010_LEGACY_TESTS)
         with tempfile.NamedTemporaryFile(suffix=f"-{name}.patch", delete=False) as f:
             f.write(patch_bytes)
             patch = Path(f.name)
         try:
-            git_apply(patch, v010=(name == "v010"))
+            git_apply(patch)
         finally:
             patch.unlink(missing_ok=True)
 
     tests = WORK / "tests"
     tests.mkdir(exist_ok=True)
-    for test in ("schema_contract.py", "v07_installer.py", "v08_release.py", "v09_release.py"):
-        shutil.copy2(ROOT / "bootstrap" / "v010" / "tests" / test, tests / test)
+    for test in ("schema_contract.py", *V010_LEGACY_TESTS):
+        name = Path(test).name
+        shutil.copy2(ROOT / "bootstrap" / "v010" / "tests" / name, tests / name)
 
     if include_transcription:
         for required in (
