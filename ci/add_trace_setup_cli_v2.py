@@ -77,37 +77,33 @@ if "document.querySelector('#next')?.click()" not in app:
     git_apply_to_work(click_patch, 'real primary-button GUI gate overlay')
     app = APP_JS.read_text(encoding='utf-8')
 
-# The Tauri command response can surface the Rust install_dir field in either
-# snake_case or camelCase at the JavaScript boundary. The CI-only GUI request
-# must preserve the exact requested directory before it clicks the real Install
-# button. This does not alter the normal user-selected install-location flow.
+# Rust Serialize responses normally expose snake_case field names, while Tauri
+# command parameter names at the JS invoke boundary are camelCase. Preserve the
+# CI-requested directory across both sides of that boundary. The nested
+# InstallOptions object is Serde data, so its `install_dir` field remains
+# snake_case by design.
 old_handoff = "if(ci?.install_dir){state.ciGui=true;state.installDir=ci.install_dir;state.shortcuts=false;state.launch=false}"
 new_handoff = "const ciInstallDir=ci?.install_dir||ci?.installDir;if(ciInstallDir){state.ciGui=true;state.installDir=ciInstallDir;state.shortcuts=false;state.launch=false}"
 if old_handoff in app:
     app = app.replace(old_handoff, new_handoff, 1)
-    APP_JS.write_text(app, encoding='utf-8')
     print('Normalized installer v2 CI request response install-directory key.')
 elif new_handoff not in app:
     raise SystemExit('Could not locate installer v2 CI GUI request install-directory handoff.')
 
-text = MAIN_RS.read_text(encoding='utf-8')
+boundary_replacements = {
+    "bridge.invoke('setup_preflight',{install_dir:state.installDir||null})": "bridge.invoke('setup_preflight',{installDir:state.installDir||null})",
+    "bridge.invoke('uninstall_trace',{install_dir:state.installDir||null})": "bridge.invoke('uninstall_trace',{installDir:state.installDir||null})",
+    "bridge.invoke('launch_trace',{install_dir:state.installDir||null})": "bridge.invoke('launch_trace',{installDir:state.installDir||null})",
+}
+for old, new in boundary_replacements.items():
+    if old in app:
+        app = app.replace(old, new)
+        print(f'Normalized Tauri invoke parameter: {old.split("(")[0]}')
+    elif new not in app:
+        raise SystemExit(f'Could not locate expected Tauri invoke boundary: {old}')
+APP_JS.write_text(app, encoding='utf-8')
 
-# Temporary source-only diagnostic. Print the exact Rust payload-launch and
-# install-directory handling lines, then stop before Cargo compilation.
-interesting = (
-    'fn perform_install(', 'fn perform_uninstall(', 'trace-payload', 'payload',
-    'install_dir', 'Trace.exe', 'Command::new', '.arg(', '.args(', '/S', '/D',
-    'status()', 'wait()', 'ci_gui_result', 'gui_install_complete'
-)
-lines = text.splitlines()
-seen = set()
-for index, line in enumerate(lines):
-    if any(token in line for token in interesting):
-        for j in range(max(0, index - 2), min(len(lines), index + 3)):
-            if j not in seen:
-                print(f'RUST_INSTALL_CORE[{j + 1}]={lines[j]}')
-                seen.add(j)
-raise SystemExit('Installer v2 Rust install-core diagnostic complete.')
+text = MAIN_RS.read_text(encoding='utf-8')
 
 if '--silent-install' in text and 'fn silent_install(' in text:
     print('Trace setup v2 silent CLI already present')
@@ -116,6 +112,13 @@ if '--silent-install' in text and 'fn silent_install(' in text:
 for token in ('fn perform_install(', 'fn perform_uninstall(', 'fn setup_version()', 'fn ci_gui_request()'):
     if token not in text:
         raise SystemExit(f'Installer v2 shared implementation missing before CLI injection: {token}')
+
+# The shared Rust install core must itself verify the selected target, so neither
+# the GUI nor the silent verification path can report success merely because the
+# embedded NSIS process returned exit code zero.
+for token in ('Command::new(&payload).arg("/S").arg(format!("/D={target}"))', 'PathBuf::from(&target).join("Trace.exe")', 'if !exe.exists(){return Err('):
+    if token not in text:
+        raise SystemExit(f'Installer v2 target-verification invariant missing: {token}')
 
 marker = '\nfn main(){\n'
 if marker not in text:
