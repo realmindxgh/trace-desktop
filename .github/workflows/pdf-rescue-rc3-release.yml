@@ -40,10 +40,20 @@ jobs:
           if($fixHash-ne'b11619a5ab7c433b5802151b85865a95254d43f5bcb48a5cf461b6f0dc5d227b'){throw "Compiler-fix SHA mismatch: $fixHash"}
           tar -xJf $fixArc -C work-pdf-rescue
 
+          $fix2Parts=Get-ChildItem 'pdf-rescue-fix2/fix2-*.b64'|Sort-Object Name
+          if($fix2Parts.Count-ne 5){throw "Expected 5 second-fix chunks; found $($fix2Parts.Count)"}
+          $fix2B64=($fix2Parts|%{Get-Content $_.FullName -Raw})-join''
+          if($fix2B64.Length-ne 13136){throw "Second-fix payload length mismatch: $($fix2B64.Length)"}
+          $fix2Arc="$env:RUNNER_TEMP\pdf-rescue-rc3-fix2.tar.xz"
+          [IO.File]::WriteAllBytes($fix2Arc,[Convert]::FromBase64String($fix2B64))
+          $fix2Hash=(Get-FileHash $fix2Arc -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($fix2Hash-ne'79e99563a8a11f329cf3d4d4c597620ee494920d421f211352a870052d35a858'){throw "Second-fix SHA mismatch: $fix2Hash"}
+          tar -xJf $fix2Arc -C work-pdf-rescue
+
           New-Item -ItemType Directory -Force -Path 'work-pdf-rescue/.github/workflows'|Out-Null
           Copy-Item 'pdf-rescue-ci-support/windows-release.yml' 'work-pdf-rescue/.github/workflows/windows-release.yml' -Force
           if(!(Test-Path 'work-pdf-rescue/.github/workflows/windows-release.yml')){throw 'Production workflow restoration failed'}
-          Write-Host "Verified RC3 carrier $hash with compiler fix $fixHash"
+          Write-Host "Verified RC3 carrier $hash with fixes $fixHash and $fix2Hash"
       - uses: actions/setup-python@v5
         with: {python-version: '3.13'}
       - uses: actions/setup-dotnet@v4
