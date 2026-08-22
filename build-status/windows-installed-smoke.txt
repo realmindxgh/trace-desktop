@@ -1,0 +1,4 @@
+run_id=32576122479
+release_run=32574443470
+result=success
+workflow=Trace Windows installed-copy smoke test
