@@ -1,0 +1,134 @@
+name: Trace v0.11 reconstructed source snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/trace-v011-source-snapshot.yml'
+      - 'bootstrap/v011/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trace-v011-source-snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish snapshot run ID
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.11 reconstructed source snapshot
+          "@ | Set-Content build-status/v011-source-snapshot.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v011-source-snapshot.txt
+          git commit -m 'ci: record v0.11 source snapshot run [skip ci]'
+          git push origin HEAD:main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Reconstruct verified v0.10 source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v2/part* | Sort-Object Name
+          if ($parts.Count -ne 8) { throw 'Incomplete Trace base bootstrap.' }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($b64))
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw 'Trace base hash mismatch.' }
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
+
+          $parts=Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw 'Incomplete v0.10 overlay.' }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "v0.10 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          if ((Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw 'v0.10 overlay hash mismatch.' }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Could not apply v0.10 overlay.' }
+          New-Item -ItemType Directory -Force -Path work/tests | Out-Null
+          foreach ($test in @('schema_contract.py','v07_installer.py','v08_release.py','v09_release.py')) { Copy-Item "bootstrap/v010/tests/$test" "work/tests/$test" -Force }
+
+      - name: Apply verified v0.11 overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v011/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Incomplete v0.11 overlay. Expected 2 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 15296) { throw "v0.11 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6cd4bdd47a095341ba6151d6addb73f47a005ad57110d3ade443449f9e9f40f2') { throw "v0.11 overlay hash mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 overlay application failed.' }
+          node --check work/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Reconstructed v0.11 JavaScript syntax check failed.' }
+          python work/tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Reconstructed v0.11 contract failed.' }
+
+      - name: Upload reconstructed v0.11 source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-Reconstructed-Source
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/package.json
+            work/src/**
+            work/database/**
+            work/src-tauri/Cargo.toml
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/setup-shell/package.json
+            work/setup-shell/src/**
+            work/setup-shell/src-tauri/Cargo.toml
+            work/setup-shell/src-tauri/tauri.conf.json
+            work/setup-shell/src-tauri/src/**
+            work/tests/**
+
+      - name: Publish snapshot status
+        if: always()
+        shell: pwsh
+        run: |
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace v0.11 reconstructed source snapshot
+          "@ | Set-Content build-status/v011-source-snapshot.txt
+          git pull --rebase origin main
+          git add build-status/v011-source-snapshot.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.11 source snapshot result [skip ci]'
+            git push origin HEAD:main
+          }
