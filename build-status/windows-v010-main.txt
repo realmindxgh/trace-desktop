@@ -1,5 +1,5 @@
-run_id=32564168492
-run_number=30
-source_sha=55afcf42745ca710a514f2393a18703cbebef9c9
+run_id=32564828780
+run_number=31
+source_sha=d174d5e905f9810d73761b40edd81e116b5ad9bb
 result=running
 workflow=Trace Windows v0.10 functional release candidate
