@@ -14,7 +14,7 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 concurrency:
   group: trace-v011-installer-v2
@@ -32,6 +32,27 @@ jobs:
         with:
           ref: trace-v011-installer-v2
           path: control
+
+      - name: Publish installer v2 run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/windows-v011-installer-v2.txt'
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          trigger_sha=${{ github.sha }}
+          version=0.11.0
+          result=running
+          workflow=Trace v0.11 installer v2 GUI verification
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add $path
+          git commit -m 'ci: record installer v2 GUI run [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit installer v2 run ID.' }
+          git push origin HEAD:trace-v011-installer-v2
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish installer v2 run ID.' }
 
       - name: Set up Node
         uses: actions/setup-node@v4
