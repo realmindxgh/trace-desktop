@@ -1,4 +1,4 @@
-run_id=32593344472
-run_number=18
-source_sha=90e8c470ed60a13c748c8dd14ed5ecdda325321f
-result=failure
+run_id=32593403384
+run_number=19
+source_sha=ee7f58e92254ac24f383d1b00045375b46dbb4eb
+result=cancelled
