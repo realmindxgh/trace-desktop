@@ -1,0 +1,121 @@
+name: Trace v0.11 core feature preservation gate
+
+on:
+  push:
+    branches:
+      - trace-v011-pdf-text-gate
+    paths:
+      - '.github/workflows/v011-core-feature-audit.yml'
+      - 'ci/v011_core_functional.py'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: trace-v011-core-feature-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout audit control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v011-pdf-text-gate
+          path: control
+
+      - name: Publish core audit run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/v011-core-feature-audit.txt'
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_run=32581268832
+          source_artifact_id=9478052364
+          source_artifact_sha256=5efa255ba2047c90c41b5b3cce9516049025339c6d87a64a5716bc20e5e156df
+          result=running
+          workflow=Trace v0.11 core feature preservation gate
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add $path
+          git commit -m 'ci: record v0.11 core audit run [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit core audit run ID.' }
+          git pull --rebase origin trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase core audit run ID.' }
+          git push origin HEAD:trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish core audit run ID.' }
+
+      - name: Download exact PDF-green source artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Trace-v0.11-PDF-Text-Windows-Green-Source
+          path: work
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32581268832
+
+      - name: Verify source identity
+        shell: pwsh
+        run: |
+          foreach ($file in @(
+            'work/package.json',
+            'work/src/app.js',
+            'work/database/schema.sql',
+            'work/src-tauri/Cargo.toml',
+            'work/src-tauri/src/db.rs',
+            'work/src-tauri/src/lib.rs',
+            'work/src-tauri/src/models.rs',
+            'work/src-tauri/src/office_import.rs',
+            'work/src-tauri/src/transcription.rs',
+            'work/setup-shell/package.json'
+          )) {
+            if (!(Test-Path $file)) { throw "PDF-green source artifact is incomplete: $file" }
+          }
+          $version=(Get-Content work/package.json -Raw | ConvertFrom-Json).version
+          if ($version -ne '0.11.0') { throw "Unexpected Trace source version: $version" }
+
+      - name: Run full v0.11 core feature audit
+        shell: pwsh
+        run: |
+          python control/ci/v011_core_functional.py work
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 core feature preservation audit failed.' }
+
+      - name: Publish core audit result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $status=@"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_run=32581268832
+          source_artifact_id=9478052364
+          source_artifact_sha256=5efa255ba2047c90c41b5b3cce9516049025339c6d87a64a5716bc20e5e156df
+          result=${{ job.status }}
+          workflow=Trace v0.11 core feature preservation gate
+          verification=pdf_green_source_identity+production_empty+search+source_management+coding+memos+themes+analysis+evidence_linked_write+undo_redo+session_recovery+backups+refi_qda+office_imports+survey_imports+annotations+transcription+pdf_text+schema+version_alignment
+          "@
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git reset --hard HEAD
+          git pull --rebase origin trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase before publishing core audit result.' }
+          $status | Set-Content build-status/v011-core-feature-audit.txt
+          git add build-status/v011-core-feature-audit.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.11 core audit result [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit core audit result.' }
+            git push origin HEAD:trace-v011-pdf-text-gate
+            if ($LASTEXITCODE -ne 0) { throw 'Could not publish core audit result.' }
+          }

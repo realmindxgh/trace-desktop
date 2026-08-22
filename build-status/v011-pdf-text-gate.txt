@@ -1,0 +1,8 @@
+run_id=32582258145
+run_number=14
+trigger_sha=f1ff44ebdc0cb592e114b27abca3a043727fcea1
+overlay_xz_sha256=6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128
+overlay_patch_sha256=8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0
+result=failure
+workflow=Trace v0.11 PDF text Windows gate
+verification=transcription_green_replay+pdf_overlay_hash+frontend_contracts+pdf_contract+v011_regressions+rust_check+rust_tests+artifact_upload
