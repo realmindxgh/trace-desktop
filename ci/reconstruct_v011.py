@@ -42,15 +42,17 @@ def require_sha(data: bytes, expected: str, label: str) -> None:
 
 
 def git_apply(patch: Path, *, v010: bool = False) -> None:
-    cmd = ["git", "apply", "--directory=work"]
+    options = ["--directory=work"]
     if v010:
-        cmd += [
+        options += [
             "--exclude=tests/v07_installer.py",
             "--exclude=tests/v08_release.py",
             "--exclude=tests/v09_release.py",
         ]
-    subprocess.run(cmd + ["--check", str(patch)], cwd=ROOT, check=True)
-    subprocess.run(cmd + [str(patch)], cwd=ROOT, check=True)
+    # Match the established Windows workflows exactly. git-apply's include/exclude
+    # path matching is sensitive to option parsing around --check on Windows.
+    subprocess.run(["git", "apply", "--check", *options, str(patch)], cwd=ROOT, check=True)
+    subprocess.run(["git", "apply", *options, str(patch)], cwd=ROOT, check=True)
 
 
 def reconstruct(include_transcription: bool) -> None:
@@ -84,7 +86,6 @@ def reconstruct(include_transcription: bool) -> None:
         finally:
             patch.unlink(missing_ok=True)
 
-    # v0.10's release tests are deliberately kept outside its overlay application.
     tests = WORK / "tests"
     tests.mkdir(exist_ok=True)
     for test in ("schema_contract.py", "v07_installer.py", "v08_release.py", "v09_release.py"):
