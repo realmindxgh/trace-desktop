@@ -1,5 +1,5 @@
-run_id=32571247560
-run_number=2
-source_sha=48831cec09a0f902b7750cf77afc0136ca2554d3
+run_id=32573706667
+run_number=3
+source_sha=e53a1094db3ff3f2c6fc9a4e9c8180ea1f780b51
 result=running
 workflow=Trace Windows v0.10 exact installer verification
