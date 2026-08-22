@@ -39,6 +39,7 @@ jobs:
           Restore-B64Archive @((Get-ChildItem 'asantepdf-fix3/fix3.b64').FullName) 1 2236 'b8a1815f03874facaea3459b055688fef6ade330ba0573c594f5a954124364e9' 'asantepdf-fix3.tar.xz' 'work-current'
           Restore-B64Archive @((Get-ChildItem 'asantepdf-fix4/fix4-*.b64').FullName) 1 6648 '74f7f95a8751b6b4df5c82bde4cb77f8eca89b316c8d95be7f4e29d1b300c34f' 'asantepdf-fix4.tar.xz' 'work-current'
           Restore-B64Archive @((Get-ChildItem 'asantepdf-fix5/fix5-*.b64').FullName) 1 3100 'b90935faf9bb14ae0a40bef5f4b8798ca03e5b411d7c9ed5e5043dcc9bc63046' 'asantepdf-fix5.tar.xz' 'work-current'
+          & (Resolve-Path 'asantepdf-fix6/apply-fix6.ps1') -Root (Resolve-Path 'work-current')
       - name: Publish selected current source files
         shell: pwsh
         run: |
@@ -50,6 +51,8 @@ jobs:
           Copy-Item 'work-current/src/PdfRescue.App/PdfiumPdfRenderer.cs' "$out/PdfiumPdfRenderer.cs" -Force
           Copy-Item 'work-current/src/PdfRescue.App/ModernWorkspace.cs' "$out/ModernWorkspace.cs" -Force
           Copy-Item 'work-current/src/PdfRescue.App/TextSearchSelection.cs' "$out/TextSearchSelection.cs" -Force
+          Copy-Item 'work-current/src/PdfRescue.App/MainWindow.xaml' "$out/MainWindow.xaml" -Force
+          Copy-Item 'work-current/src/PdfRescue.App/MainWindow.xaml.cs' "$out/MainWindow.xaml.cs" -Force
           Copy-Item 'work-current/src/PdfRescue.App/PdfRescue.App.csproj' "$out/PdfRescue.App.csproj" -Force
           Copy-Item 'work-current/scripts/publish-release.ps1' "$out/scripts/publish-release.ps1" -Force
           Copy-Item 'work-current/scripts/verify-installed-release.ps1' "$out/scripts/verify-installed-release.ps1" -Force
@@ -59,5 +62,5 @@ jobs:
           git config user.email actions@users.noreply.github.com
           git add asantepdf-debug/current-broken
           if (git diff --cached --quiet) { exit 0 }
-          git commit -m 'ci: expose current AsantePDF compiler-error source [skip ci]'
+          git commit -m 'ci: expose current AsantePDF UI source [skip ci]'
           git push origin HEAD:asantepdf-v1-ci
