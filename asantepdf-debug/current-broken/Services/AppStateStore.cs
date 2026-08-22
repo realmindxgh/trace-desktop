@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 
 namespace PdfRescue.App.Services;
@@ -112,3 +113,4 @@ public sealed class AppStateStore
         return Path.Combine(ThumbnailDirectory, Convert.ToHexString(bytes)[..24] + ".png");
     }
 }
+

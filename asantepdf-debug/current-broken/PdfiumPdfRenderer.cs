@@ -119,7 +119,7 @@ public sealed class PdfiumPdfRenderer : IPdfRenderer
                     try { text = codePoint <= 0 ? string.Empty : char.ConvertFromUtf32(codePoint); }
                     catch { text = string.Empty; }
                     double left = 0, right = 0, bottom = 0, top = 0;
-                    if (!fpdf_text.FPDFTextGetCharBox(textPage, i, ref left, ref right, ref bottom, ref top)) continue;
+                    if (fpdf_text.FPDFTextGetCharBox(textPage, i, ref left, ref right, ref bottom, ref top) == 0) continue;
                     chars.Add(new PdfTextCharacter(i, text, new Rect(left, bottom, Math.Max(0, right - left), Math.Max(0, top - bottom))));
                 }
                 return new PdfTextPage(width, height, chars);
@@ -277,3 +277,4 @@ public sealed class PdfiumPdfRenderer : IPdfRenderer
         }
     }
 }
+

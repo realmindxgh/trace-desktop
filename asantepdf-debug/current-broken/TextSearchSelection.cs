@@ -1,3 +1,5 @@
+using System.IO;
+using IOPath = System.IO.Path;
 using System.Collections.ObjectModel;
 using System.Text;
 using System.Windows;
@@ -180,7 +182,7 @@ public partial class MainWindow
     private async Task AddMultipleHighlightsAsync(string input, string output, int pageNumber, IReadOnlyList<NormalizedPdfRect> areas, CancellationToken token)
     {
         if (areas.Count == 0) throw new ArgumentException("No text selection was available to highlight.", nameof(areas));
-        var tempDir = Path.Combine(Path.GetTempPath(), "AsantePDF", "text-highlight", Guid.NewGuid().ToString("N"));
+        var tempDir = IOPath.Combine(IOPath.GetTempPath(), "AsantePDF", "text-highlight", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
         try
         {
@@ -188,7 +190,7 @@ public partial class MainWindow
             for (var i = 0; i < areas.Count; i++)
             {
                 token.ThrowIfCancellationRequested();
-                var next = i == areas.Count - 1 ? output : Path.Combine(tempDir, $"step-{i:000}.pdf");
+                var next = i == areas.Count - 1 ? output : IOPath.Combine(tempDir, $"step-{i:000}.pdf");
                 await _markup.AddHighlightAsync(current, next, pageNumber, areas[i], token);
                 current = next;
                 SetDeterminateProgress(i + 1, areas.Count, $"Highlighting line {i + 1:N0} of {areas.Count:N0}...");
@@ -275,3 +277,4 @@ public partial class MainWindow
         public override string ToString() => $"Page {SourcePageNumber}: {Snippet}";
     }
 }
+

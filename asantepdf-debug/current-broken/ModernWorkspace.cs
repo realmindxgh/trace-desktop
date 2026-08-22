@@ -783,7 +783,7 @@ public partial class MainWindow
             SplitViewerPanel.Visibility = Visibility.Visible;
             SplitDocumentTitle.Text = Path.GetFileName(session.Path);
             var page = Math.Clamp(session.LastPage, 1, checked((int)_secondaryRenderer.PageCount));
-            SecondaryPreviewImage.Source = await _secondaryRenderer.RenderAsync((uint)page, session.PreviewWidth, _lifetime.Token);
+            SecondaryPreviewImage.Source = await _secondaryRenderer.RenderAsync(page, session.PreviewWidth, _lifetime.Token);
         }
         catch (Exception ex)
         {
@@ -898,3 +898,4 @@ public partial class MainWindow
 
     private sealed record SessionPageState(int SourcePageNumber, int Rotation);
 }
+
