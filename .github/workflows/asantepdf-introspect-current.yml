@@ -51,6 +51,7 @@ jobs:
           Copy-Item 'work-current/src/PdfRescue.App/PdfiumPdfRenderer.cs' "$out/PdfiumPdfRenderer.cs" -Force
           Copy-Item 'work-current/src/PdfRescue.App/ModernWorkspace.cs' "$out/ModernWorkspace.cs" -Force
           Copy-Item 'work-current/src/PdfRescue.App/TextSearchSelection.cs' "$out/TextSearchSelection.cs" -Force
+          Copy-Item 'work-current/src/PdfRescue.App/App.xaml' "$out/App.xaml" -Force
           Copy-Item 'work-current/src/PdfRescue.App/MainWindow.xaml' "$out/MainWindow.xaml" -Force
           Copy-Item 'work-current/src/PdfRescue.App/MainWindow.xaml.cs' "$out/MainWindow.xaml.cs" -Force
           Copy-Item 'work-current/src/PdfRescue.App/PdfRescue.App.csproj' "$out/PdfRescue.App.csproj" -Force
