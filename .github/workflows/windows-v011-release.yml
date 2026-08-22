@@ -1,0 +1,313 @@
+name: Trace Windows v0.11 exact release gate
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'release-triggers/v011.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trace-windows-v011-release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct verified Trace base source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v2/part* | Sort-Object Name
+          if ($parts.Count -ne 8) { throw "Incomplete Trace base bootstrap. Expected 8 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw "Trace base SHA-256 mismatch: $hash" }
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
+          if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace base reconstruction failed.' }
+
+      - name: Apply verified v0.10 functional overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete v0.10 overlay. Expected 4 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "v0.10 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw "v0.10 overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.10 overlay preflight failed.' }
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.10 overlay application failed.' }
+          New-Item -ItemType Directory -Force -Path work/tests | Out-Null
+          foreach ($test in @('schema_contract.py','v07_installer.py','v08_release.py','v09_release.py')) { Copy-Item "bootstrap/v010/tests/$test" "work/tests/$test" -Force }
+
+      - name: Apply verified v0.11 imports and display overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v011/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Incomplete v0.11 import/display overlay. Expected 2 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 15296) { throw "v0.11 import/display overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6cd4bdd47a095341ba6151d6addb73f47a005ad57110d3ade443449f9e9f40f2') { throw "v0.11 import/display overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 import/display overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 import/display overlay application failed.' }
+
+      - name: Apply verified v0.11 usability overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v011plus/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Incomplete v0.11 usability overlay. Expected 2 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 13960) { throw "v0.11 usability overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011plus.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '60dccf75689c9f46a8e76ecee0356ecaf2e69713c6e624bbacaaa6e7b358ef5a') { throw "v0.11 usability overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011plus.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 usability overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 usability overlay application failed.' }
+
+      - name: Apply verified v0.11 local transcription overlay
+        shell: pwsh
+        run: |
+          $b64=(Get-Content bootstrap/v011transcribe/patch.b64 -Raw).Trim()
+          if ($b64.Length -ne 15848) { throw "v0.11 transcription overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-transcription.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '0e7ca3b8762f598bf771b4efea13a9f2e5cde8b2fcb45af7b96dd30bcd39dbe5') { throw "v0.11 transcription overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-transcription.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 transcription overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 transcription overlay application failed.' }
+          python -c "import json,pathlib,re; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text())['version']=='0.11.0'; assert json.loads((p/'src-tauri/tauri.conf.json').read_text())['version']=='0.11.0'; assert json.loads((p/'setup-shell/package.json').read_text())['version']=='0.11.0'; assert json.loads((p/'setup-shell/src-tauri/tauri.conf.json').read_text())['version']=='0.11.0'; print('Trace v0.11 version alignment verified')"
+
+      - name: Inject exact branded setup CLI
+        shell: pwsh
+        run: |
+          python ci/add_trace_setup_cli.py
+          $main=Get-Content work/setup-shell/src-tauri/src/main.rs -Raw
+          foreach ($token in @('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','cleanup grace period')) {
+            if (!$main.Contains($token)) { throw "Missing branded setup verification token: $token" }
+          }
+
+      - name: Prepare Windows assets
+        working-directory: work
+        shell: pwsh
+        run: |
+          python -m pip install pillow
+          python scripts/ci_prepare_assets.py
+          Copy-Item src-tauri/windows/installer-header.bmp src-tauri/windows/trace-installer-header.bmp -Force
+          Copy-Item src-tauri/windows/installer-sidebar.bmp src-tauri/windows/trace-installer-sidebar.bmp -Force
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
+          Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
+          foreach ($file in @('src-tauri/icons/icon.ico','setup-shell/src-tauri/icons/icon.ico','src-tauri/windows/trace-installer-header.bmp','src-tauri/windows/trace-installer-sidebar.bmp')) {
+            if (!(Test-Path $file)) { throw "Required Windows asset missing: $file" }
+          }
+
+      - name: Run full v0.11 functional contracts
+        working-directory: work
+        shell: pwsh
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace JavaScript syntax check failed.' }
+          node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Setup JavaScript syntax check failed.' }
+          python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace schema contract failed.' }
+          $compat='tests/v10_compat.py'
+          (Get-Content tests/v10_functional.py -Raw).Replace("'0.10.0'","'0.11.0'") | Set-Content $compat
+          python $compat
+          $compatExit=$LASTEXITCODE
+          Remove-Item $compat -Force
+          if ($compatExit -ne 0) { throw 'Trace v0.10 behavioral regression contract failed under v0.11.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 import/display contract failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 usability contract failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 transcription contract failed.' }
+
+      - name: Install Tauri CLI
+        working-directory: work
+        run: npm install --no-save @tauri-apps/cli@2.11.0
+
+      - name: Build and test Trace v0.11 native application
+        working-directory: work
+        shell: pwsh
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Rust tests failed.' }
+          npx tauri build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Windows application/installer build failed.' }
+
+      - name: Stage exact native installer payload
+        shell: pwsh
+        run: |
+          $payload=Get-ChildItem work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (!$payload) { throw 'Tauri NSIS payload not found.' }
+          New-Item -ItemType Directory -Force -Path work/setup-shell/src-tauri/payload | Out-Null
+          Copy-Item $payload.FullName work/setup-shell/src-tauri/payload/trace-payload.exe -Force
+          $bytes=[IO.File]::ReadAllBytes('work/setup-shell/src-tauri/payload/trace-payload.exe')
+          if ($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Embedded installer payload is not a credible Windows executable.' }
+
+      - name: Build branded TraceSetup.exe
+        working-directory: work/setup-shell
+        shell: pwsh
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Setup frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Setup Rust check failed.' }
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Setup release build failed.' }
+
+      - name: Assemble v0.11 release candidate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path work/release | Out-Null
+          $setup='work/setup-shell/src-tauri/target/release/trace-setup.exe'
+          if (!(Test-Path $setup)) { throw 'Branded Trace setup executable is missing.' }
+          Copy-Item $setup work/release/TraceSetup.exe -Force
+          $native=Get-ChildItem work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Copy-Item $native.FullName work/release/Trace-Native-Setup.exe -Force
+          $setupHash=(Get-FileHash work/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $nativeHash=(Get-FileHash work/release/Trace-Native-Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          TraceSetup.exe  $setupHash
+          Trace-Native-Setup.exe  $nativeHash
+          "@ | Set-Content work/release/SHA256.txt
+
+      - name: Prove exact install, launch and uninstall
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path work/release/TraceSetup.exe).Path
+          $payload=(Resolve-Path work/release/Trace-Native-Setup.exe).Path
+          $nativeDir=Join-Path $env:RUNNER_TEMP 'TraceV011NativeReference'
+          $installDir=Join-Path $env:RUNNER_TEMP 'TraceV011BrandedInstall'
+          foreach ($dir in @($nativeDir,$installDir)) { if (Test-Path $dir) { Remove-Item $dir -Recurse -Force } }
+
+          # Install the exact native payload embedded by the branded shell and capture
+          # the installed application hash. Tauri/NSIS may patch the executable during
+          # bundling, so this is the correct reference instead of target/release/Trace.exe.
+          & $payload /S "/D=$nativeDir"
+          if ($LASTEXITCODE -ne 0) { throw "Native reference install failed with exit code $LASTEXITCODE." }
+          $nativeExe=Join-Path $nativeDir 'Trace.exe'
+          for ($i=0; $i -lt 80 -and !(Test-Path $nativeExe); $i++) { Start-Sleep -Milliseconds 250 }
+          if (!(Test-Path $nativeExe)) { throw 'Native reference Trace.exe was not installed.' }
+          $referenceHash=(Get-FileHash $nativeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $nativeUninstaller=Get-ChildItem $nativeDir -Filter '*uninstall*.exe' | Select-Object -First 1
+          if (!$nativeUninstaller) { $nativeUninstaller=Get-ChildItem $nativeDir -Filter 'uninstall.exe' | Select-Object -First 1 }
+          if (!$nativeUninstaller) { throw 'Native reference uninstaller was not found.' }
+          & $nativeUninstaller.FullName /S
+          if ($LASTEXITCODE -ne 0) { throw "Native reference uninstall failed with exit code $LASTEXITCODE." }
+          for ($i=0; $i -lt 120 -and (Test-Path $nativeExe); $i++) { Start-Sleep -Milliseconds 250 }
+          if (Test-Path $nativeExe) { throw 'Native reference Trace.exe remained after uninstall.' }
+
+          $researchDir=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Trace v0.11 CI Research Data'
+          New-Item -ItemType Directory -Force -Path $researchDir | Out-Null
+          $sentinel=Join-Path $researchDir 'research-data-must-survive.txt'
+          'Trace v0.11 research data preservation sentinel' | Set-Content $sentinel
+
+          & $setup --silent-install --install-dir $installDir
+          if ($LASTEXITCODE -ne 0) { throw "TraceSetup.exe silent install failed with exit code $LASTEXITCODE." }
+          $installedTrace=Join-Path $installDir 'Trace.exe'
+          for ($i=0; $i -lt 80 -and !(Test-Path $installedTrace); $i++) { Start-Sleep -Milliseconds 250 }
+          if (!(Test-Path $installedTrace)) { throw "Installed Trace.exe was not found at $installedTrace." }
+          $installedHash=(Get-FileHash $installedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installedHash -ne $referenceHash) { throw 'Branded setup did not install the exact native Trace application payload.' }
+
+          $trace=Start-Process -FilePath $installedTrace -WorkingDirectory $installDir -PassThru
+          Start-Sleep -Seconds 10
+          if ($trace.HasExited) { throw "Installed Trace.exe exited unexpectedly with code $($trace.ExitCode)." }
+          Stop-Process -Id $trace.Id -Force
+          Start-Sleep -Seconds 2
+
+          & $setup --silent-uninstall --install-dir $installDir
+          if ($LASTEXITCODE -ne 0) { throw "TraceSetup.exe silent uninstall failed with exit code $LASTEXITCODE." }
+          for ($i=0; $i -lt 120 -and (Test-Path $installedTrace); $i++) { Start-Sleep -Milliseconds 250 }
+          if (Test-Path $installedTrace) { throw 'Trace.exe is still present after branded setup uninstall.' }
+          if (!(Test-Path $sentinel)) { throw 'Research-data sentinel was removed during uninstall.' }
+
+          $setupHash=(Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          Trace 0.11.0 exact Windows verification
+          source_sha=${{ github.sha }}
+          run_id=${{ github.run_id }}
+          TraceSetup_sha256=$setupHash
+          native_payload_installed=true
+          branded_install_matches_native_payload=true
+          installed_copy_launched=true
+          installed_copy_survived_10_seconds=true
+          exact_branded_uninstall=true
+          research_data_preserved=true
+          office_and_survey_imports=true
+          display_sizes=true
+          source_search=true
+          annotations=true
+          coding_stripes=true
+          local_transcription_engine_compiled=true
+          "@ | Set-Content work/release/FINAL-VERIFICATION.txt
+          Get-Content work/release/FINAL-VERIFICATION.txt
+
+      - name: Upload exact verified Trace v0.11 release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-Exact-Verified-Windows-Release
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/release/TraceSetup.exe
+            work/release/Trace-Native-Setup.exe
+            work/release/SHA256.txt
+            work/release/FINAL-VERIFICATION.txt
+            work/src-tauri/target/release/Trace.exe
+            work/src-tauri/target/release/bundle/nsis/*.exe
+            work/src-tauri/target/release/bundle/msi/*.msi
