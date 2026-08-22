@@ -1,6 +1,6 @@
 using System.IO;
 using PdfSharp.Pdf;
-using PdfSharp.Pdf.OldAcroForms;
+using PdfSharp.Pdf.AcroForms;
 using PdfSharp.Pdf.IO;
 
 namespace PdfRescue.App.Services;
@@ -14,7 +14,7 @@ public sealed class PdfFormService
         var input = Path.GetFullPath(inputPath);
         if (!File.Exists(input)) throw new FileNotFoundException("PDF was not found.", input);
 
-        using var document = PdfReader.Open(input, PdfDocumentOpenMode.ReadOnly);
+        using var document = PdfReader.Open(input, PdfDocumentOpenMode.Import);
         try
         {
             var fields = document.AcroForm.Fields;
@@ -77,7 +77,7 @@ public sealed class PdfFormService
         }, token);
     }
 
-    private static PdfFormFieldInfo ToInfo(string name, PdfFormField field) => field switch
+    private static PdfFormFieldInfo ToInfo(string name, PdfAcroField field) => field switch
     {
         PdfTextField text => new(name, "Text", text.Text ?? string.Empty, !field.ReadOnly),
         PdfCheckBoxField check => new(name, "Checkbox", check.Checked ? "true" : "false", !field.ReadOnly),
@@ -88,7 +88,7 @@ public sealed class PdfFormService
         _ => new(name, "Other", field.Value?.ToString() ?? string.Empty, !field.ReadOnly)
     };
 
-    private static void SetValue(PdfFormField field, string value)
+    private static void SetValue(PdfAcroField field, string value)
     {
         switch (field)
         {

@@ -16,19 +16,27 @@ New-Item -ItemType Directory -Force -Path $appOut, $prereqs, $selfTestOut | Out-
 
 Write-Host 'Restoring solution...' -ForegroundColor Cyan
 dotnet restore (Join-Path $root 'PdfRescue.sln')
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE." }
 
 Write-Host 'Building solution in Release...' -ForegroundColor Cyan
 dotnet build (Join-Path $root 'PdfRescue.sln') -c Release -p:Platform=x64 --no-restore
+if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE." }
 
 Write-Host 'Running core smoke tests...' -ForegroundColor Cyan
 dotnet run --project (Join-Path $root 'tests\PdfRescue.SmokeTests\PdfRescue.SmokeTests.csproj') -c Release --no-build
+if ($LASTEXITCODE -ne 0) { throw "Core smoke tests failed with exit code $LASTEXITCODE." }
 
 Write-Host 'Publishing self-contained Windows x64 application...' -ForegroundColor Cyan
 dotnet publish (Join-Path $root 'src\PdfRescue.App\PdfRescue.App.csproj') `
     -c Release -r win-x64 --self-contained true -p:Platform=x64 -p:PublishReadyToRun=false `
     -o $appOut
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE." }
+
+$publishedExe = Join-Path $appOut 'AsantePDF.exe'
+if (-not (Test-Path $publishedExe)) { throw 'dotnet publish completed without producing AsantePDF.exe.' }
 
 & (Join-Path $PSScriptRoot 'stage-release-engines.ps1') -Destination $appOut -SkipInstall:$SkipEngineInstall
+if ($LASTEXITCODE -ne 0) { throw "Engine staging failed with exit code $LASTEXITCODE." }
 
 $notices = Join-Path $root 'THIRD-PARTY-NOTICES.md'
 if (Test-Path $notices) { Copy-Item $notices (Join-Path $appOut 'THIRD-PARTY-NOTICES.md') -Force }
@@ -43,7 +51,7 @@ if ((Get-Item $vcRedist).Length -lt 5MB) { throw 'Downloaded VC++ redistributabl
 if ($LASTEXITCODE -notin @(0,3)) { throw 'The generated PDF fixture failed qpdf validation.' }
 
 Write-Host 'Running the full candidate self-test against the published application...' -ForegroundColor Cyan
-$process = Start-Process -FilePath (Join-Path $appOut 'AsantePDF.exe') `
+$process = Start-Process -FilePath $publishedExe `
     -ArgumentList @('--selftest-final', $samplePdf, $selfTestOut) -Wait -PassThru
 if ($process.ExitCode -ne 0) {
     $errorFile = Join-Path $selfTestOut 'final-candidate-error.txt'

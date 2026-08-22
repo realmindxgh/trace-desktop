@@ -47,8 +47,6 @@ icon = ROOT / 'assets' / 'asantepdf.ico'
 if not icon.exists() or icon.stat().st_size < 1000:
     errors.append('assets/asantepdf.ico is missing or invalid.')
 
-
-
 workflow = (ROOT / '.github' / 'workflows' / 'windows-release.yml').read_text(encoding='utf-8')
 if 'cache: true' in workflow and 'packages.lock.json' not in workflow:
     errors.append('setup-dotnet cache is enabled without a packages.lock.json dependency path; the action will fail before build.')
@@ -63,14 +61,14 @@ for required_gate in (
     if required_gate not in final_gate:
         errors.append(f'Final candidate gate is missing required release exercise: {required_gate}')
 
-# Guard against known PDFsharp 6.2 form API mismatches that were present in the RC2 archive.
+# PDFsharp-WPF 6.2.4 uses the proven AcroForms/PdfAcroField API in this release line.
 form_service = (APP / 'Services' / 'PdfFormService.cs').read_text(encoding='utf-8')
-if 'PdfSharp.Pdf.AcroForms' in form_service:
-    errors.append('PdfFormService uses obsolete/nonexistent PdfSharp.Pdf.AcroForms namespace; use PdfSharp.Pdf.OldAcroForms.')
-if 'PdfAcroField' in form_service:
-    errors.append('PdfFormService uses nonexistent PdfAcroField base type; current PDFsharp uses PdfFormField.')
-if 'PdfSharp.Pdf.OldAcroForms' not in form_service or 'PdfFormField' not in form_service:
-    errors.append('PdfFormService is missing the current PDFsharp OldAcroForms/PdfFormField API surface.')
+if 'PdfSharp.Pdf.OldAcroForms' in form_service:
+    errors.append('PdfFormService uses an API surface not exposed by the pinned PDFsharp-WPF 6.2.4 package.')
+if re.search(r'\bPdfFormField\b', form_service):
+    errors.append('PdfFormService uses PdfFormField, which is not exposed by the pinned PDFsharp-WPF 6.2.4 package used by AsantePDF.')
+if 'PdfSharp.Pdf.AcroForms' not in form_service or 'PdfAcroField' not in form_service:
+    errors.append('PdfFormService must retain the Windows-proven PDFsharp 6.2.4 AcroForms/PdfAcroField API surface.')
 
 required = [
     APP / 'IPdfRenderer.cs',
@@ -84,7 +82,6 @@ for path in required:
     if not path.exists():
         errors.append(f'Required release source is missing: {path.relative_to(ROOT)}')
 
-# Guard the new product UX contract. Home must be the no-document surface; premium/upgrade UI is forbidden.
 for forbidden in ('Unlock Premium', 'Upgrade to Premium', 'Subscribe now'):
     if forbidden.lower() in main_xaml.lower():
         errors.append(f'Forbidden paid-tier UI is present: {forbidden}')
