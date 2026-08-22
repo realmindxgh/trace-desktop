@@ -1,0 +1,56 @@
+name: AsantePDF Current Source Introspection
+
+on:
+  push:
+    branches: [asantepdf-v1-ci]
+    paths:
+      - '.github/workflows/asantepdf-introspect-current.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-current-source:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct current AsantePDF source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Restore-B64Archive([string[]]$Files,[int]$Count,[int]$Length,[string]$Sha,[string]$Archive,[string]$Target) {
+            $parts = Get-Item $Files | Sort-Object Name
+            if ($parts.Count -ne $Count) { throw "Expected $Count chunks for ${Archive}; found $($parts.Count)" }
+            $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+            if ($b64.Length -ne $Length) { throw "Payload length mismatch for ${Archive}: $($b64.Length)" }
+            $path = Join-Path $env:RUNNER_TEMP $Archive
+            [IO.File]::WriteAllBytes($path,[Convert]::FromBase64String($b64))
+            $actual = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Sha) { throw "SHA mismatch for ${Archive}: $actual" }
+            tar -xJf $path -C $Target
+          }
+          New-Item -ItemType Directory -Force -Path work-current | Out-Null
+          $baseParts = @((Get-ChildItem 'pdf-rescue-build-payload/part-*.b64').FullName) + @((Get-ChildItem 'pdf-rescue-build-tail3k/tail-*.b64').FullName)
+          Restore-B64Archive $baseParts 18 87192 'ea150483853ad62e544874f3831bb1005d7060af233a56ad6c23eaf75309a955' 'pdf-rescue-baseline.tar.xz' 'work-current'
+          Restore-B64Archive @((Get-ChildItem 'pdf-rescue-fix1/fix1-*.b64').FullName) 4 9104 'b11619a5ab7c433b5802151b85865a95254d43f5bcb48a5cf461b6f0dc5d227b' 'pdf-rescue-fix1.tar.xz' 'work-current'
+          Restore-B64Archive @((Get-ChildItem 'pdf-rescue-fix2/fix2-*.b64').FullName) 5 13136 '79e99563a8a11f329cf3d4d4c597620ee494920d421f211352a870052d35a858' 'pdf-rescue-fix2.tar.xz' 'work-current'
+          Restore-B64Archive @((Get-ChildItem 'asantepdf-v1/code-*.b64').FullName) 9 59868 'be179526d815a69ef59a584d6643b5b18b5cb318f1c57170564e7544f7d2aa91' 'asantepdf-v1.tar.xz' 'work-current'
+          Restore-B64Archive @((Get-ChildItem 'asantepdf-fix3/fix3.b64').FullName) 1 2236 'b8a1815f03874facaea3459b055688fef6ade330ba0573c594f5a954124364e9' 'asantepdf-fix3.tar.xz' 'work-current'
+      - name: Publish selected current source files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out='asantepdf-debug/current-broken'
+          New-Item -ItemType Directory -Force -Path "$out/Services","$out/scripts","$out/installer" | Out-Null
+          Copy-Item 'work-current/src/PdfRescue.App/Services/PdfFormService.cs' "$out/Services/PdfFormService.cs" -Force
+          Copy-Item 'work-current/src/PdfRescue.App/PdfRescue.App.csproj' "$out/PdfRescue.App.csproj" -Force
+          Copy-Item 'work-current/scripts/publish-release.ps1' "$out/scripts/publish-release.ps1" -Force
+          Copy-Item 'work-current/scripts/verify-installed-release.ps1' "$out/scripts/verify-installed-release.ps1" -Force
+          Copy-Item 'work-current/installer/PdfRescue.iss' "$out/installer/PdfRescue.iss" -Force
+          git config user.name asantepdf-build-bot
+          git config user.email actions@users.noreply.github.com
+          git add asantepdf-debug/current-broken
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'ci: expose selected current AsantePDF source [skip ci]'
+          git push origin HEAD:asantepdf-v1-ci
