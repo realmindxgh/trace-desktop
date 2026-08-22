@@ -2,7 +2,9 @@ name: PDF Rescue RC3 Windows Release Gate
 on:
   push:
     branches: [pdf-rescue-rc3-ci]
-    paths-ignore: ['pdf-rescue-ci-status/**']
+    paths-ignore:
+      - 'pdf-rescue-ci-status/**'
+      - 'pdf-rescue-fix*/**'
 permissions:
   contents: write
 jobs:
@@ -27,10 +29,21 @@ jobs:
           mkdir work-pdf-rescue|Out-Null
           tar -xJf $arc -C work-pdf-rescue
           if(!(Test-Path work-pdf-rescue/PdfRescue.sln)){throw 'Source reconstruction failed'}
+
+          $fixParts=Get-ChildItem 'pdf-rescue-fix1/fix1-*.b64'|Sort-Object Name
+          if($fixParts.Count-ne 4){throw "Expected 4 compiler-fix chunks; found $($fixParts.Count)"}
+          $fixB64=($fixParts|%{Get-Content $_.FullName -Raw})-join''
+          if($fixB64.Length-ne 9104){throw "Compiler-fix payload length mismatch: $($fixB64.Length)"}
+          $fixArc="$env:RUNNER_TEMP\pdf-rescue-rc3-fix1.tar.xz"
+          [IO.File]::WriteAllBytes($fixArc,[Convert]::FromBase64String($fixB64))
+          $fixHash=(Get-FileHash $fixArc -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($fixHash-ne'b11619a5ab7c433b5802151b85865a95254d43f5bcb48a5cf461b6f0dc5d227b'){throw "Compiler-fix SHA mismatch: $fixHash"}
+          tar -xJf $fixArc -C work-pdf-rescue
+
           New-Item -ItemType Directory -Force -Path 'work-pdf-rescue/.github/workflows'|Out-Null
           Copy-Item 'pdf-rescue-ci-support/windows-release.yml' 'work-pdf-rescue/.github/workflows/windows-release.yml' -Force
           if(!(Test-Path 'work-pdf-rescue/.github/workflows/windows-release.yml')){throw 'Production workflow restoration failed'}
-          Write-Host "Verified RC3 carrier $hash"
+          Write-Host "Verified RC3 carrier $hash with compiler fix $fixHash"
       - uses: actions/setup-python@v5
         with: {python-version: '3.13'}
       - uses: actions/setup-dotnet@v4
