@@ -25,11 +25,13 @@ jobs:
         with:
           path: control
 
-      - name: Publish replay run ID
+      - name: Publish isolated replay run ID
         shell: pwsh
         working-directory: control
+        continue-on-error: true
         run: |
-          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          $path="build-status/runs/v011-transcription-${{ github.run_id }}.txt"
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
           @"
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
@@ -38,16 +40,23 @@ jobs:
           transcription_overlay_sha256=7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e
           result=running
           workflow=Trace v0.11 transcription proven Windows replay
-          "@ | Set-Content build-status/v011-transcription-proven-replay.txt
+          "@ | Set-Content $path
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
-          git add build-status/v011-transcription-proven-replay.txt
-          git commit -m 'ci: record proven transcription replay [skip ci]'
-          if ($LASTEXITCODE -ne 0) { throw 'Could not commit replay run ID.' }
-          git pull --rebase origin main
-          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase replay run ID.' }
-          git push origin HEAD:main
-          if ($LASTEXITCODE -ne 0) { throw 'Could not publish replay run ID.' }
+          git add $path
+          git commit -m 'ci: record isolated transcription replay [skip ci]'
+          if ($LASTEXITCODE -eq 0) {
+            for ($i=0; $i -lt 5; $i++) {
+              git pull --rebase origin main
+              if ($LASTEXITCODE -eq 0) {
+                git push origin HEAD:main
+                if ($LASTEXITCODE -eq 0) { break }
+              }
+              Start-Sleep -Seconds 2
+            }
+          }
+          git rebase --abort 2>$null
+          exit 0
 
       - name: Checkout proven transcription source
         uses: actions/checkout@v4
@@ -142,29 +151,14 @@ jobs:
             source/work/setup-shell/src-tauri/src/**
             source/work/tests/**
 
-      - name: Publish replay result
+      - name: Record verification result in job summary
         if: always()
         shell: pwsh
-        working-directory: control
         run: |
-          $status=@"
-          run_id=${{ github.run_id }}
-          run_number=${{ github.run_number }}
-          source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
-          trigger_sha=${{ github.sha }}
-          transcription_overlay_sha256=7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e
-          result=${{ job.status }}
-          workflow=Trace v0.11 transcription proven Windows replay
-          verification=proven_reconstruction+all_v011_contracts+native_whisper_bindings+functional_wav_decode+rust_check+rust_tests+artifact_upload
-          "@
-          git reset --hard HEAD
-          git pull --rebase origin main
-          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase before publishing replay result.' }
-          $status | Set-Content build-status/v011-transcription-proven-replay.txt
-          git add build-status/v011-transcription-proven-replay.txt
-          if (git status --porcelain) {
-            git commit -m 'ci: record proven transcription replay result [skip ci]'
-            if ($LASTEXITCODE -ne 0) { throw 'Could not commit replay result.' }
-            git push origin HEAD:main
-            if ($LASTEXITCODE -ne 0) { throw 'Could not publish replay result.' }
-          }
+          @"
+          Trace v0.11 transcription proven Windows replay
+          Run: ${{ github.run_id }}
+          Overlay: 7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e
+          Result: ${{ job.status }}
+          Verification: proven reconstruction + all v0.11 contracts + native Whisper bindings + functional WAV decode + Rust check/tests + source artifact
+          "@ | Add-Content $env:GITHUB_STEP_SUMMARY
