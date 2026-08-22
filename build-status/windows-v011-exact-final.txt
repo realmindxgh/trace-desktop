@@ -1,0 +1,6 @@
+run_id=32582256355
+run_number=1
+trigger_sha=e7c05d6b39fa2feebd20ef1acd2dd41beb1b7f22
+version=0.11.0
+result=running
+workflow=Trace Windows v0.11 exact installer verification
