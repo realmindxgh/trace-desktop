@@ -47,6 +47,7 @@ jobs:
           Copy-Item 'work-current/src/PdfRescue.App/PdfRescue.App.csproj' "$out/PdfRescue.App.csproj" -Force
           Copy-Item 'work-current/scripts/publish-release.ps1' "$out/scripts/publish-release.ps1" -Force
           Copy-Item 'work-current/scripts/verify-installed-release.ps1' "$out/scripts/verify-installed-release.ps1" -Force
+          Copy-Item 'work-current/scripts/static-source-checks.py' "$out/scripts/static-source-checks.py" -Force
           Copy-Item 'work-current/installer/PdfRescue.iss' "$out/installer/PdfRescue.iss" -Force
           git config user.name asantepdf-build-bot
           git config user.email actions@users.noreply.github.com
