@@ -259,10 +259,28 @@ jobs:
         shell: pwsh
         run: |
           $setup=(Resolve-Path 'source/work/setup-shell/src-tauri/target/release/trace-setup.exe').Path
+          $nativeSetup=(Resolve-Path 'verified-release/src-tauri/target/release/bundle/nsis/Trace_0.11.0_x64-setup.exe').Path
+          $referenceDir=Join-Path $env:RUNNER_TEMP 'TraceInstallerV2NativeReference'
           $guiDir=Join-Path $env:RUNNER_TEMP 'TraceInstallerV2GuiInstall'
           $resultPath=Join-Path $env:RUNNER_TEMP 'trace-installer-v2-gui-result.json'
-          if (Test-Path $guiDir) { Remove-Item $guiDir -Recurse -Force }
+          foreach ($dir in @($referenceDir,$guiDir)) {
+            if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          }
           if (Test-Path $resultPath) { Remove-Item $resultPath -Force }
+
+          # Establish the byte-for-byte reference by directly installing the exact
+          # proven NSIS payload, matching the method used by the final v0.11 gate.
+          $native=Start-Process -FilePath $nativeSetup -ArgumentList @('/S',"/D=$referenceDir") -Wait -PassThru
+          if ($native.ExitCode -ne 0) { throw "Native NSIS reference install failed with exit code $($native.ExitCode)." }
+          $referenceTrace=Join-Path $referenceDir 'Trace.exe'
+          if (!(Test-Path $referenceTrace)) { throw "Native reference Trace.exe was not found at $referenceTrace." }
+          $referenceHash=(Get-FileHash $referenceTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          $referenceUninstaller=Get-ChildItem $referenceDir -Filter '*uninstall*.exe' -File | Select-Object -First 1
+          if (!$referenceUninstaller) { throw 'Native reference uninstaller was not found.' }
+          $nativeUninstall=Start-Process -FilePath $referenceUninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($nativeUninstall.ExitCode -ne 0) { throw "Native reference uninstall failed with exit code $($nativeUninstall.ExitCode)." }
+          Start-Sleep -Seconds 2
+          if (Test-Path $referenceTrace) { throw 'Native reference Trace.exe remains after reference uninstall.' }
 
           $researchDir=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Trace v0.11 Installer V2 CI Research Data'
           New-Item -ItemType Directory -Force -Path $researchDir | Out-Null
@@ -301,8 +319,7 @@ jobs:
           $installedTrace=Join-Path $guiDir 'Trace.exe'
           if (!(Test-Path $installedTrace)) { throw 'GUI path reported success but Trace.exe is missing.' }
           $installedHash=(Get-FileHash $installedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
-          $provenHash=(Get-FileHash 'verified-release/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($installedHash -ne $provenHash) { throw 'GUI path did not install the exact previously verified Trace.exe.' }
+          if ($installedHash -ne $referenceHash) { throw 'GUI path installed executable does not match the exact native NSIS payload installation.' }
 
           $trace=Start-Process -FilePath $installedTrace -WorkingDirectory $guiDir -PassThru
           Start-Sleep -Seconds 10
@@ -326,6 +343,8 @@ jobs:
           version=0.11.0
           gui_primary_button_path=passed
           tauri_event_acl=passed
+          native_nsis_reference_install=passed
+          native_nsis_reference_uninstall=passed
           installed_trace_exact_hash_match=passed
           installed_copy_launch=passed
           shared_core_uninstall=passed
@@ -333,7 +352,8 @@ jobs:
           stale_0_9_0_removed=passed
           layout_contract_no_page_scroll=passed
           setup_sha256=$setupHash
-          installed_trace_sha256=$provenHash
+          native_reference_trace_sha256=$referenceHash
+          installed_trace_sha256=$installedHash
           source_run=32581268832
           native_release_run=32582256355
           "@ | Set-Content candidate/GUI-VERIFICATION.txt
