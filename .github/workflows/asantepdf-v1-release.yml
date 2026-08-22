@@ -49,32 +49,35 @@ jobs:
           Restore-B64Archive @((Get-ChildItem 'asantepdf-fix5/fix5-*.b64').FullName) 1 3100 'b90935faf9bb14ae0a40bef5f4b8798ca03e5b411d7c9ed5e5043dcc9bc63046' 'asantepdf-fix5.tar.xz' 'work-asantepdf'
           & (Resolve-Path 'asantepdf-fix6/apply-fix6.ps1') -Root (Resolve-Path 'work-asantepdf')
 
-          # Install the approved Ghana-inspired AsantePDF icon into the reconstructed source.
-          $brandPng = Resolve-Path 'asantepdf-debug/brand-assets/asantepdf-icon.png'
-          Copy-Item $brandPng 'work-asantepdf/assets/asantepdf-icon.png' -Force
+          # Rehydrate the approved Ghana-inspired AsantePDF icon from a text-safe carrier.
+          $brandCarrier = Get-Content 'asantepdf-branding/asantepdf-icon.png.b64' -Raw
+          $brandCarrier = $brandCarrier -replace '\s',''
+          $brandPng = 'work-asantepdf/assets/asantepdf-icon.png'
+          [IO.File]::WriteAllBytes($brandPng,[Convert]::FromBase64String($brandCarrier))
           $pngBytes = [IO.File]::ReadAllBytes($brandPng)
           $pngHash = (Get-FileHash $brandPng -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($pngHash -ne 'e39386a6ac97b39d981ba7d37a7deef7306ad7a980a517fe16ecc810374d4ccf') { throw "Approved AsantePDF icon SHA mismatch: $pngHash" }
+          if ($pngHash -ne 'c4d4ada6a84656ae76551e7fbdf7ffff0e3767d98832dc5b9aad24c23491d1cf') { throw "Approved AsantePDF icon SHA mismatch: $pngHash" }
 
-          # Build a Windows ICO containing the approved 256x256 PNG. Modern Windows scales this source cleanly for shell sizes.
+          # Build a valid Windows ICO containing the approved 256x256 PNG.
           $icoPath = 'work-asantepdf/assets/asantepdf.ico'
           $fs = [IO.File]::Open($icoPath,[IO.FileMode]::Create,[IO.FileAccess]::Write)
           try {
             $bw = New-Object IO.BinaryWriter($fs)
-            $bw.Write([UInt16]0)      # reserved
-            $bw.Write([UInt16]1)      # icon type
-            $bw.Write([UInt16]1)      # image count
-            $bw.Write([Byte]0)        # width 256
-            $bw.Write([Byte]0)        # height 256
-            $bw.Write([Byte]0)        # palette
-            $bw.Write([Byte]0)        # reserved
-            $bw.Write([UInt16]1)      # planes
-            $bw.Write([UInt16]32)     # bpp
+            $bw.Write([UInt16]0)
+            $bw.Write([UInt16]1)
+            $bw.Write([UInt16]1)
+            $bw.Write([Byte]0)
+            $bw.Write([Byte]0)
+            $bw.Write([Byte]0)
+            $bw.Write([Byte]0)
+            $bw.Write([UInt16]1)
+            $bw.Write([UInt16]32)
             $bw.Write([UInt32]$pngBytes.Length)
-            $bw.Write([UInt32]22)     # PNG data offset
+            $bw.Write([UInt32]22)
             $bw.Write($pngBytes)
             $bw.Flush()
           } finally { $fs.Dispose() }
+          if ((Get-Item $icoPath).Length -le $pngBytes.Length) { throw 'Generated AsantePDF ICO is invalid.' }
 
           $projectPath = 'work-asantepdf/src/PdfRescue.App/PdfRescue.App.csproj'
           $project = Get-Content $projectPath -Raw
