@@ -55,7 +55,13 @@ fn silent_uninstall(install_dir:Option<String>)->Result<UninstallResult,String>{
   let status=Command::new(&uninstall).arg("/S").status().map_err(|e|format!("Could not start the Trace uninstaller: {e}"))?;
   if !status.success(){return Err(format!("The Trace uninstaller exited with status {}.",status.code().unwrap_or(-1)));}
   let exe=PathBuf::from(&target).join("Trace.exe");
-  if exe.exists(){return Err("Windows reported that uninstall finished, but Trace.exe is still present. No research project data was removed.".into());}
+  // NSIS may return before its self-cleanup helper has removed the installed files.
+  // Give Windows a bounded grace period, but never report success while Trace.exe remains.
+  for _ in 0..120 {
+    if !exe.exists(){break;}
+    std::thread::sleep(std::time::Duration::from_millis(250));
+  }
+  if exe.exists(){return Err("Windows reported that uninstall finished, but Trace.exe is still present after the cleanup grace period. No research project data was removed.".into());}
   let _=configure_desktop_shortcut(&target,false);
   log_line("Trace silent uninstall completed. Research projects and backups were preserved.");
   Ok(UninstallResult{success:true,message:"Trace was removed. Local research projects and verified backups were preserved.".into(),install_dir:target,projects_preserved:true})
@@ -87,7 +93,7 @@ text = text.replace(marker, '\n' + helpers + '\n' + main_prefix, 1)
 path.write_text(text, encoding='utf-8')
 
 check = path.read_text(encoding='utf-8')
-for token in ('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','fn silent_install('):
+for token in ('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','fn silent_install(','cleanup grace period'):
     if token not in check:
         raise SystemExit(f'Missing injected token: {token}')
 print('Trace setup silent CLI injected successfully')
