@@ -1,0 +1,168 @@
+name: Trace v0.11 PDF text Windows gate
+
+on:
+  push:
+    branches:
+      - trace-v011-pdf-text-gate
+    paths:
+      - '.github/workflows/v011-pdf-text-gate.yml'
+      - 'bootstrap/v011pdf/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/v011-pdf-text-gate.yml'
+      - 'bootstrap/v011pdf/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trace-v011-pdf-text-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout PDF gate control branch
+        uses: actions/checkout@v4
+        with:
+          path: control
+
+      - name: Checkout proven transcription source
+        uses: actions/checkout@v4
+        with:
+          ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
+          path: source
+
+      - name: Inject corrected transcription overlay into proven source
+        shell: pwsh
+        run: |
+          Copy-Item control/bootstrap/v011transcribe/part00 source/bootstrap/v011transcribe/part00 -Force
+          Copy-Item control/bootstrap/v011transcribe/part01 source/bootstrap/v011transcribe/part01 -Force
+          $wf='source/.github/workflows/v011-transcription-check.yml'
+          $text=Get-Content $wf -Raw
+          $text=$text.Replace('17960','18928')
+          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
+          Set-Content $wf $text
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct transcription-green Trace v0.11 source
+        shell: pwsh
+        working-directory: source
+        run: |
+          python -m pip install pyyaml
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install PyYAML.' }
+          @'
+          import pathlib, subprocess, tempfile, yaml
+          root = pathlib.Path.cwd()
+          workflow = yaml.safe_load((root / '.github/workflows/v011-transcription-check.yml').read_text(encoding='utf-8'))
+          steps = workflow['jobs']['check']['steps']
+          wanted = [
+              'Reconstruct verified Trace base source',
+              'Apply verified v0.10 overlay',
+              'Apply verified v0.11 imports and display overlay',
+              'Apply verified v0.11 usability overlay',
+              'Apply verified v0.11 local transcription overlay',
+              'Prepare Windows assets',
+              'Frontend and research workflow contracts',
+              'Rust compile and transcription unit tests',
+          ]
+          by_name = {s.get('name'): s for s in steps}
+          for name in wanted:
+              step = by_name[name]
+              cwd = root / step.get('working-directory', '.')
+              with tempfile.NamedTemporaryFile('w', suffix='.ps1', encoding='utf-8', delete=False) as f:
+                  f.write("$ErrorActionPreference = 'Stop'\n")
+                  f.write(step['run'])
+                  script = f.name
+              print(f'REPLAY STEP: {name}', flush=True)
+              subprocess.run(['pwsh','-NoProfile','-File',script], cwd=cwd, check=True)
+          '@ | Set-Content replay_transcription_green.py
+          python replay_transcription_green.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not reconstruct the proven transcription-green source.' }
+
+      - name: Apply PDF text-analysis overlay
+        shell: pwsh
+        working-directory: source
+        run: |
+          $parts=Get-ChildItem ../control/bootstrap/v011pdf/part* | Sort-Object Name
+          if ($parts.Count -ne 1) { throw "Incomplete PDF overlay. Expected 1 part, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 8368) { throw "PDF overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'b5f08c9bbab0360314391508b2d68e60f9eb57944854d259fbe5c92fef5dbc1f') { throw "PDF overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress PDF overlay.' }
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne 'f483d5e74bb689299bed525f261b13519e0be51ed863d9b9a69efc52fce8251b') { throw "PDF patch SHA-256 mismatch: $patchHash" }
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay application failed.' }
+
+      - name: PDF, frontend and regression contracts
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax check failed after PDF overlay.' }
+          python tests/v11_pdf_text.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 PDF text-analysis contract failed.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 import/display regression contract failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 usability regression contract failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 transcription regression contract failed.' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed after PDF overlay.' }
+
+      - name: Native Windows compile and real PDF extraction test
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace PDF Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native Rust tests failed.' }
+
+      - name: Upload PDF-text green source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-PDF-Text-Windows-Green-Source
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            source/work/package.json
+            source/work/src/**
+            source/work/database/**
+            source/work/src-tauri/Cargo.toml
+            source/work/src-tauri/tauri.conf.json
+            source/work/src-tauri/src/**
+            source/work/setup-shell/package.json
+            source/work/setup-shell/src/**
+            source/work/setup-shell/src-tauri/Cargo.toml
+            source/work/setup-shell/src-tauri/tauri.conf.json
+            source/work/setup-shell/src-tauri/src/**
+            source/work/tests/**
