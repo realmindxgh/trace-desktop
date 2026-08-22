@@ -1,0 +1,141 @@
+name: Trace Windows installed-copy smoke test
+
+on:
+  workflow_run:
+    workflows: ['Trace Windows v0.10 functional release candidate']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  installed-smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release run
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_run') {
+            $runId = '${{ github.event.workflow_run.id }}'
+          } else {
+            $runId = gh run list --repo '${{ github.repository }}' --workflow windows-v2-main.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId'
+          }
+          if (!$runId) { throw 'Could not resolve a successful Trace Windows release run.' }
+          "run_id=$runId" >> $env:GITHUB_OUTPUT
+          Write-Host "Testing release run $runId"
+
+      - name: Download exact Windows release artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path release-artifact | Out-Null
+          gh run download '${{ steps.release.outputs.run_id }}' --repo '${{ github.repository }}' --name 'Trace-v0.10-Windows-Release' --dir release-artifact
+          $setup = Get-ChildItem release-artifact -Recurse -File -Filter 'TraceSetup.exe' | Select-Object -First 1
+          $native = Get-ChildItem release-artifact -Recurse -File -Filter '*-setup.exe' | Where-Object { $_.Name -ne 'TraceSetup.exe' } | Select-Object -First 1
+          if (!$setup) { throw 'TraceSetup.exe was not present in the release artifact.' }
+          if (!$native) { throw 'Native NSIS installer was not present in the release artifact.' }
+          Write-Host "Branded setup: $($setup.FullName)"
+          Write-Host "Native installer: $($native.FullName)"
+
+      - name: Verify branded TraceSetup starts
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release-artifact -Recurse -File -Filter 'TraceSetup.exe' | Select-Object -First 1
+          $process = Start-Process -FilePath $setup.FullName -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "TraceSetup.exe exited unexpectedly with code $($process.ExitCode)." }
+          Stop-Process -Id $process.Id -Force
+          Start-Sleep -Seconds 2
+          Write-Host 'Branded TraceSetup.exe startup smoke test passed.'
+
+      - name: Install exact native payload and launch installed Trace
+        shell: pwsh
+        run: |
+          $native = Get-ChildItem release-artifact -Recurse -File -Filter '*-setup.exe' | Where-Object { $_.Name -ne 'TraceSetup.exe' } | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'TraceInstalledSmoke'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+
+          $researchDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Trace CI Research Data'
+          New-Item -ItemType Directory -Force -Path $researchDir | Out-Null
+          $sentinel = Join-Path $researchDir 'research-data-must-survive.txt'
+          'Trace research data preservation sentinel' | Set-Content $sentinel
+
+          $installer = Start-Process -FilePath $native.FullName -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($installer.ExitCode -ne 0) { throw "Native Trace installer failed with exit code $($installer.ExitCode)." }
+
+          $installedTrace = Get-ChildItem $installDir -Recurse -File -Filter 'Trace.exe' | Select-Object -First 1
+          if (!$installedTrace) { throw "Installed Trace.exe was not found under $installDir." }
+          $buildTrace = Get-ChildItem release-artifact -Recurse -File -Filter 'Trace.exe' | Where-Object { $_.FullName -notlike "$installDir*" } | Select-Object -First 1
+          Write-Host "Launching installed copy: $($installedTrace.FullName)"
+          Write-Host "Build artifact copy: $($buildTrace.FullName)"
+
+          $traceProcess = Start-Process -FilePath $installedTrace.FullName -WorkingDirectory $installedTrace.DirectoryName -PassThru
+          Start-Sleep -Seconds 10
+          if ($traceProcess.HasExited) { throw "Installed Trace.exe exited unexpectedly with code $($traceProcess.ExitCode)." }
+          Stop-Process -Id $traceProcess.Id -Force
+          Start-Sleep -Seconds 2
+
+          $uninstaller = Get-ChildItem $installDir -Recurse -File -Filter 'uninstall.exe' | Select-Object -First 1
+          if (!$uninstaller) { throw 'Trace uninstaller was not created by the installer.' }
+          $uninstallProcess = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) { throw "Trace uninstaller failed with exit code $($uninstallProcess.ExitCode)." }
+          Start-Sleep -Seconds 3
+
+          if (!(Test-Path $sentinel)) { throw 'Research-data sentinel was removed during uninstall.' }
+          if (Test-Path $installedTrace.FullName) { throw 'Trace.exe is still present after silent uninstall.' }
+
+          New-Item -ItemType Directory -Force -Path smoke-results | Out-Null
+          $setup = Get-ChildItem release-artifact -Recurse -File -Filter 'TraceSetup.exe' | Select-Object -First 1
+          $setupHash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $nativeHash = (Get-FileHash $native.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          Trace v0.10 installed-copy smoke test
+          release_run=${{ steps.release.outputs.run_id }}
+          branded_setup_started=true
+          native_install_roundtrip=true
+          installed_copy_launched=true
+          silent_uninstall_passed=true
+          research_data_sentinel_preserved=true
+          TraceSetup_sha256=$setupHash
+          native_installer_sha256=$nativeHash
+          "@ | Set-Content smoke-results/INSTALLED-SMOKE-MANIFEST.txt
+          Get-Content smoke-results/INSTALLED-SMOKE-MANIFEST.txt
+
+      - name: Upload installed-copy smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.10-Installed-Smoke-Evidence
+          if-no-files-found: error
+          retention-days: 14
+          path: smoke-results/INSTALLED-SMOKE-MANIFEST.txt
+
+      - name: Publish smoke-test status
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          release_run=${{ steps.release.outputs.run_id }}
+          result=${{ job.status }}
+          workflow=Trace Windows installed-copy smoke test
+          "@ | Set-Content build-status/windows-installed-smoke.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin main
+          git add build-status/windows-installed-smoke.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record installed-copy smoke result [skip ci]'
+            git push origin HEAD:main
+          }
