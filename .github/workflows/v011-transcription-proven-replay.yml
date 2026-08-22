@@ -1,0 +1,123 @@
+name: Trace v0.11 transcription proven Windows replay
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/v011-transcription-proven-replay.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trace-v011-transcription-proven-replay
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout control branch
+        uses: actions/checkout@v4
+        with:
+          path: control
+
+      - name: Publish replay run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
+          trigger_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.11 transcription proven Windows replay
+          "@ | Set-Content build-status/v011-transcription-proven-replay.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v011-transcription-proven-replay.txt
+          git commit -m 'ci: record proven transcription replay [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit replay run ID.' }
+          git pull --rebase origin main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase replay run ID.' }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish replay run ID.' }
+
+      - name: Checkout proven transcription source
+        uses: actions/checkout@v4
+        with:
+          ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
+          path: source
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Replay proven reconstruction and contracts without Unix bindings
+        shell: pwsh
+        working-directory: source
+        run: |
+          python -m pip install pyyaml
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install PyYAML.' }
+          @'
+          import pathlib, subprocess, tempfile, yaml
+          root = pathlib.Path.cwd()
+          workflow = yaml.safe_load((root / '.github/workflows/v011-transcription-check.yml').read_text(encoding='utf-8'))
+          steps = workflow['jobs']['check']['steps']
+          wanted = [
+              'Reconstruct verified Trace base source',
+              'Apply verified v0.10 overlay',
+              'Apply verified v0.11 imports and display overlay',
+              'Apply verified v0.11 usability overlay',
+              'Apply verified v0.11 local transcription overlay',
+              'Prepare Windows assets',
+              'Frontend and research workflow contracts',
+              'Rust compile and transcription unit tests',
+          ]
+          by_name = {s.get('name'): s for s in steps}
+          for name in wanted:
+              step = by_name[name]
+              cwd = root / step.get('working-directory', '.')
+              with tempfile.NamedTemporaryFile('w', suffix='.ps1', encoding='utf-8', delete=False) as f:
+                  f.write("$ErrorActionPreference = 'Stop'\n")
+                  f.write(step['run'])
+                  script = f.name
+              print(f'REPLAY STEP: {name}', flush=True)
+              subprocess.run(['pwsh','-NoProfile','-File',script], cwd=cwd, check=True)
+          '@ | Set-Content replay_proven.py
+          python replay_proven.py
+          if ($LASTEXITCODE -ne 0) { throw 'Proven transcription replay failed.' }
+
+      - name: Upload green reconstructed source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-Transcription-Proven-Windows-Green-Source
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            source/work/package.json
+            source/work/src/**
+            source/work/database/**
+            source/work/src-tauri/Cargo.toml
+            source/work/src-tauri/tauri.conf.json
+            source/work/src-tauri/src/**
+            source/work/setup-shell/package.json
+            source/work/setup-shell/src/**
+            source/work/setup-shell/src-tauri/Cargo.toml
+            source/work/setup-shell/src-tauri/tauri.conf.json
+            source/work/setup-shell/src-tauri/src/**
+            source/work/tests/**
