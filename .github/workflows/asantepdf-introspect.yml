@@ -1,0 +1,57 @@
+name: AsantePDF Source Introspection
+
+on:
+  push:
+    branches: [asantepdf-v1-ci]
+    paths:
+      - '.github/workflows/asantepdf-introspect.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-working-source:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct last proven PDF Rescue source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Restore-B64Archive([string[]]$Files,[int]$Count,[int]$Length,[string]$Sha,[string]$Archive,[string]$Target) {
+            $parts = Get-Item $Files | Sort-Object Name
+            if ($parts.Count -ne $Count) { throw "Expected $Count chunks for ${Archive}; found $($parts.Count)" }
+            $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+            if ($b64.Length -ne $Length) { throw "Payload length mismatch for ${Archive}: $($b64.Length)" }
+            $path = Join-Path $env:RUNNER_TEMP $Archive
+            [IO.File]::WriteAllBytes($path,[Convert]::FromBase64String($b64))
+            $actual = (Get-FileHash $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Sha) { throw "SHA mismatch for ${Archive}: $actual" }
+            tar -xJf $path -C $Target
+          }
+
+          New-Item -ItemType Directory -Force -Path work-proven | Out-Null
+          $baseParts = @((Get-ChildItem 'pdf-rescue-build-payload/part-*.b64').FullName) + @((Get-ChildItem 'pdf-rescue-build-tail3k/tail-*.b64').FullName)
+          Restore-B64Archive $baseParts 18 87192 'ea150483853ad62e544874f3831bb1005d7060af233a56ad6c23eaf75309a955' 'pdf-rescue-baseline.tar.xz' 'work-proven'
+          Restore-B64Archive @((Get-ChildItem 'pdf-rescue-fix1/fix1-*.b64').FullName) 4 9104 'b11619a5ab7c433b5802151b85865a95254d43f5bcb48a5cf461b6f0dc5d227b' 'pdf-rescue-fix1.tar.xz' 'work-proven'
+          Restore-B64Archive @((Get-ChildItem 'pdf-rescue-fix2/fix2-*.b64').FullName) 5 13136 '79e99563a8a11f329cf3d4d4c597620ee494920d421f211352a870052d35a858' 'pdf-rescue-fix2.tar.xz' 'work-proven'
+
+      - name: Publish selected proven source files to isolated branch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = 'asantepdf-debug/original-working'
+          New-Item -ItemType Directory -Force -Path "$out/Services" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$out/scripts" | Out-Null
+          Copy-Item 'work-proven/src/PdfRescue.App/Services/PdfFormService.cs' "$out/Services/PdfFormService.cs" -Force
+          Copy-Item 'work-proven/src/PdfRescue.App/PdfRescue.App.csproj' "$out/PdfRescue.App.csproj" -Force
+          Copy-Item 'work-proven/scripts/publish-release.ps1' "$out/scripts/publish-release.ps1" -Force
+          Copy-Item 'work-proven/scripts/verify-installed-release.ps1' "$out/scripts/verify-installed-release.ps1" -Force
+          git config user.name asantepdf-build-bot
+          git config user.email actions@users.noreply.github.com
+          git add asantepdf-debug/original-working
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'ci: expose selected proven PDF Rescue source [skip ci]'
+          git push origin HEAD:asantepdf-v1-ci
