@@ -92,6 +92,23 @@ elif new_handoff not in app:
 
 text = MAIN_RS.read_text(encoding='utf-8')
 
+# Temporary source-only diagnostic. Print the exact Rust payload-launch and
+# install-directory handling lines, then stop before Cargo compilation.
+interesting = (
+    'fn perform_install(', 'fn perform_uninstall(', 'trace-payload', 'payload',
+    'install_dir', 'Trace.exe', 'Command::new', '.arg(', '.args(', '/S', '/D',
+    'status()', 'wait()', 'ci_gui_result', 'gui_install_complete'
+)
+lines = text.splitlines()
+seen = set()
+for index, line in enumerate(lines):
+    if any(token in line for token in interesting):
+        for j in range(max(0, index - 2), min(len(lines), index + 3)):
+            if j not in seen:
+                print(f'RUST_INSTALL_CORE[{j + 1}]={lines[j]}')
+                seen.add(j)
+raise SystemExit('Installer v2 Rust install-core diagnostic complete.')
+
 if '--silent-install' in text and 'fn silent_install(' in text:
     print('Trace setup v2 silent CLI already present')
     raise SystemExit(0)
