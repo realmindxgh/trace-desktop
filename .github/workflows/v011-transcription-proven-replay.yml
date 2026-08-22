@@ -35,7 +35,7 @@ jobs:
           run_number=${{ github.run_number }}
           source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
           trigger_sha=${{ github.sha }}
-          transcription_overlay_sha256=81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a
+          transcription_overlay_sha256=7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e
           result=running
           workflow=Trace v0.11 transcription proven Windows replay
           "@ | Set-Content build-status/v011-transcription-proven-replay.txt
@@ -62,17 +62,17 @@ jobs:
           Copy-Item control/bootstrap/v011transcribe/part01 source/bootstrap/v011transcribe/part01 -Force
           $wf='source/.github/workflows/v011-transcription-check.yml'
           $text=Get-Content $wf -Raw
-          $text=$text.Replace('17960','18488')
-          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a')
+          $text=$text.Replace('17960','18928')
+          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
           Set-Content $wf $text
           $parts=Get-ChildItem source/bootstrap/v011transcribe/part* | Sort-Object Name
           if ($parts.Count -ne 2) { throw 'Corrected transcription overlay must contain exactly two parts.' }
           $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
-          if ($b64.Length -ne 18488) { throw "Corrected transcription overlay length mismatch: $($b64.Length)" }
+          if ($b64.Length -ne 18928) { throw "Corrected transcription overlay length mismatch: $($b64.Length)" }
           $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011transcribe-corrected.patch.xz'
           [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
           $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a') { throw "Corrected transcription overlay SHA-256 mismatch: $hash" }
+          if ($hash -ne '7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e') { throw "Corrected transcription overlay SHA-256 mismatch: $hash" }
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -152,10 +152,10 @@ jobs:
           run_number=${{ github.run_number }}
           source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
           trigger_sha=${{ github.sha }}
-          transcription_overlay_sha256=81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a
+          transcription_overlay_sha256=7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e
           result=${{ job.status }}
           workflow=Trace v0.11 transcription proven Windows replay
-          verification=proven_reconstruction+all_v011_contracts+native_whisper_bindings+rust_check+rust_tests+artifact_upload
+          verification=proven_reconstruction+all_v011_contracts+native_whisper_bindings+functional_wav_decode+rust_check+rust_tests+artifact_upload
           "@
           git reset --hard HEAD
           git pull --rebase origin main
