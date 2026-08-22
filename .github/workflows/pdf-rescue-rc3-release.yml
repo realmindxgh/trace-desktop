@@ -27,6 +27,9 @@ jobs:
           mkdir work-pdf-rescue|Out-Null
           tar -xJf $arc -C work-pdf-rescue
           if(!(Test-Path work-pdf-rescue/PdfRescue.sln)){throw 'Source reconstruction failed'}
+          New-Item -ItemType Directory -Force -Path 'work-pdf-rescue/.github/workflows'|Out-Null
+          Copy-Item 'pdf-rescue-ci-support/windows-release.yml' 'work-pdf-rescue/.github/workflows/windows-release.yml' -Force
+          if(!(Test-Path 'work-pdf-rescue/.github/workflows/windows-release.yml')){throw 'Production workflow restoration failed'}
           Write-Host "Verified RC3 carrier $hash"
       - uses: actions/setup-python@v5
         with: {python-version: '3.13'}
