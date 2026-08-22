@@ -21,6 +21,7 @@ assert 'fn perform_install(' in main and 'perform_install(Some(&app),options)' i
 assert 'fn perform_uninstall(' in main and 'perform_uninstall(Some(&app),install_dir)' in main, 'GUI uninstall is not routed through shared implementation'
 assert 'fn ci_gui_request()' in main and 'fn ci_gui_result(' in main, 'real WebView CI GUI path hook missing'
 assert "bridge.invoke('ci_gui_request')" in app and 'state.ciGui' in app, 'frontend GUI-path CI hook missing'
+assert "document.querySelector('#next')?.click()" in app, 'CI GUI path must click the real primary installer button'
 assert '.setup-main' in css and 'grid-template-rows:1fr 66px' in css, 'footer must be part of layout, not a floating overlay'
 assert '.setup-stage' in css and 'overflow:hidden' in css, 'installer stage must not use browser scrolling'
 assert 'position:absolute' not in re.search(r'\.setup-dock\{([^}]*)\}',css).group(1), 'setup footer still floats over content'
