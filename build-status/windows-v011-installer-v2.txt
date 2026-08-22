@@ -1,5 +1,9 @@
 run_id=32596005329
 trigger_sha=ad7f02c744bbd2feb1c16bdc1854e9e76da69648
 version=0.11.0
-result=running
+result=success
 workflow=Trace v0.11 installer v2 GUI verification
+artifact_id=9481709020
+artifact_digest=sha256:72f7729ccd674e86d2b35d97d8f94e472a689e636d51aa605f70677a2f80315e
+setup_sha256=d62c7df477eaf8d573a3d32668b151105214ad29efd5b866b7e939c4655bd9cd
+merge_commit=9161ba204c8796e7b82501edd17364f01cc63503
