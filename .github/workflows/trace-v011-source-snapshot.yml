@@ -9,12 +9,19 @@ on:
       - '.github/workflows/trace-v011-source-snapshot.yml'
       - 'ci/ux_foundation_gate.ps1'
       - 'bootstrap/v011ux/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/trace-v011-source-snapshot.yml'
+      - 'ci/ux_foundation_gate.ps1'
+      - 'bootstrap/v011ux/**'
 
 permissions:
   contents: write
 
 concurrency:
-  group: trace-ux-foundation-known-gate
+  group: trace-ux-foundation-known-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,6 +37,7 @@ jobs:
           ref: trace-ux-foundation
 
       - name: Publish UX run ID
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build-status | Out-Null
@@ -77,7 +85,7 @@ jobs:
             source/work/src-tauri/target/release/bundle/msi/*.msi
 
       - name: Publish UX result
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         shell: pwsh
         run: |
           git config user.name 'trace-build-bot'
