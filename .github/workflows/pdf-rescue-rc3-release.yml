@@ -1,0 +1,93 @@
+name: PDF Rescue RC3 Windows Release Gate
+
+on:
+  push:
+    branches: [pdf-rescue-rc3-ci]
+    paths-ignore:
+      - 'pdf-rescue-ci-status/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-install:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out carrier branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct verified PDF Rescue RC3 build source
+        shell: pwsh
+        run: |
+          $head = Get-ChildItem 'pdf-rescue-build-payload/part-*.b64' | Sort-Object Name
+          $tail = Get-ChildItem 'pdf-rescue-build-tail3k/tail-*.b64' | Sort-Object Name
+          if ($head.Count -ne 7) { throw "Expected 7 verified head chunks; found $($head.Count)." }
+          if ($tail.Count -ne 11) { throw "Expected 11 verified tail chunks; found $($tail.Count)." }
+          $b64 = (($head + $tail) | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 87192) { throw "Payload length mismatch: $($b64.Length)" }
+          $archive = Join-Path $env:RUNNER_TEMP 'pdf-rescue-rc3-build.tar.xz'
+          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'ea150483853ad62e544874f3831bb1005d7060af233a56ad6c23eaf75309a955') {
+            throw "RC3 carrier SHA-256 mismatch: $hash"
+          }
+          New-Item -ItemType Directory -Force -Path 'work-pdf-rescue' | Out-Null
+          tar -xJf $archive -C 'work-pdf-rescue'
+          if (!(Test-Path 'work-pdf-rescue/PdfRescue.sln')) { throw 'RC3 source reconstruction failed.' }
+          Write-Host "Verified RC3 carrier: $hash"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up .NET from RC3 global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: work-pdf-rescue/global.json
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --version 6.7.1 -y --no-progress --limit-output
+          if ($LASTEXITCODE -notin @(0,1641,3010)) { exit $LASTEXITCODE }
+
+      - name: Run static source checks
+        working-directory: work-pdf-rescue
+        shell: pwsh
+        run: python scripts/static-source-checks.py
+
+      - name: Build, stage engines, self-test and compile exact Setup.exe
+        working-directory: work-pdf-rescue
+        shell: pwsh
+        run: ./scripts/publish-release.ps1
+
+      - name: Install exact Setup.exe and verify installed Program Files copy
+        working-directory: work-pdf-rescue
+        shell: pwsh
+        run: |
+          ./scripts/verify-installed-release.ps1 `
+            -InstallerPath './dist/installer/PDF Rescue Setup.exe' `
+            -SamplePdf './dist/release-sample.pdf'
+
+      - name: Upload PDF Rescue Setup.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDF-Rescue-RC3-Windows-Installer
+          path: work-pdf-rescue/dist/installer/PDF Rescue Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDF-Rescue-RC3-Release-Evidence
+          path: |
+            work-pdf-rescue/dist/selftest-preinstall/**
+            work-pdf-rescue/dist/selftest-installed/**
+            work-pdf-rescue/dist/release-sample.pdf
+          if-no-files-found: warn
+          retention-days: 14
