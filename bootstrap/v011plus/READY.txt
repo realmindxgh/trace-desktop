@@ -5,3 +5,4 @@ Parts: 2
 Base64 length: 13960
 Compressed SHA256: 60dccf75689c9f46a8e76ecee0356ecaf2e69713c6e624bbacaaa6e7b358ef5a
 Adds: full source-text search, saved annotations, coding stripes, 0.11.0 versioning.
+Checkpoint workflow: .github/workflows/v011-usability-check.yml
