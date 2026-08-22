@@ -197,8 +197,7 @@ jobs:
         shell: pwsh
         working-directory: control
         run: |
-          $path='build-status/v011-pdf-text-gate.txt'
-          @"
+          $status=@"
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           trigger_sha=${{ github.sha }}
@@ -207,12 +206,14 @@ jobs:
           result=${{ job.status }}
           workflow=Trace v0.11 PDF text Windows gate
           verification=transcription_green_replay+pdf_overlay_hash+frontend_contracts+pdf_contract+v011_regressions+rust_check+rust_tests+artifact_upload
-          "@ | Set-Content $path
+          "@
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
+          git reset --hard HEAD
           git pull --rebase origin trace-v011-pdf-text-gate
           if ($LASTEXITCODE -ne 0) { throw 'Could not rebase before publishing the isolated PDF gate result.' }
-          git add $path
+          $status | Set-Content build-status/v011-pdf-text-gate.txt
+          git add build-status/v011-pdf-text-gate.txt
           if (git status --porcelain) {
             git commit -m 'ci: record isolated PDF text gate result [skip ci]'
             if ($LASTEXITCODE -ne 0) { throw 'Could not commit the isolated PDF gate result.' }
