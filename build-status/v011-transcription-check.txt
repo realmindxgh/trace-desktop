@@ -1,5 +1,5 @@
-run_id=32574146370
-run_number=1
-source_sha=1ae3190fbcda03fbd694f205e2459107c920699f
+run_id=32577419733
+run_number=3
+source_sha=6281f41ab1d4dff143ecd59ef234fdf7feb3eb02
 result=running
 workflow=Trace v0.11 local transcription checkpoint
