@@ -96,6 +96,9 @@ if 'state.ciGui' in app:
         APP_JS.write_text(fixed, encoding='utf-8')
         app = fixed
     if 'state.ciGui.install_dir' not in app and 'state.ciGui?.install_dir' not in app:
+        for line_no, line in enumerate(app.splitlines(), 1):
+            if any(token in line for token in ('ciGui', 'ci_gui_request', 'installDir', 'install_dir')):
+                print(f'CI_GUI_SOURCE[{line_no}]={line}')
         raise SystemExit('Installer v2 CI GUI hook does not consume the Rust install_dir field.')
 
 text = MAIN_RS.read_text(encoding='utf-8')
