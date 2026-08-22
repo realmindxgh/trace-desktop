@@ -1,0 +1,144 @@
+name: AsantePDF V1 Windows Release Gate
+
+on:
+  push:
+    branches: [asantepdf-v1-ci]
+    paths-ignore:
+      - 'asantepdf-ci-status/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified PDF engine baseline
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = Get-ChildItem 'pdf-rescue-build-payload/part-*.b64' | Sort-Object Name
+          $tail = Get-ChildItem 'pdf-rescue-build-tail3k/tail-*.b64' | Sort-Object Name
+          if ($head.Count -ne 7) { throw "Expected 7 head chunks; found $($head.Count)" }
+          if ($tail.Count -ne 11) { throw "Expected 11 tail chunks; found $($tail.Count)" }
+          $b64 = (($head + $tail) | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 87192) { throw "Baseline payload length mismatch: $($b64.Length)" }
+          $arc = "$env:RUNNER_TEMP\pdf-rescue-rc3-build.tar.xz"
+          [IO.File]::WriteAllBytes($arc, [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash $arc -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'ea150483853ad62e544874f3831bb1005d7060af233a56ad6c23eaf75309a955') { throw "Baseline SHA mismatch: $hash" }
+          New-Item -ItemType Directory -Force -Path work-asantepdf | Out-Null
+          tar -xJf $arc -C work-asantepdf
+
+          $fix1 = Get-ChildItem 'pdf-rescue-fix1/fix1-*.b64' | Sort-Object Name
+          if ($fix1.Count -ne 4) { throw "Expected 4 compiler-fix chunks; found $($fix1.Count)" }
+          $fix1B64 = ($fix1 | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($fix1B64.Length -ne 9104) { throw "Compiler-fix payload length mismatch: $($fix1B64.Length)" }
+          $fix1Arc = "$env:RUNNER_TEMP\pdf-rescue-fix1.tar.xz"
+          [IO.File]::WriteAllBytes($fix1Arc, [Convert]::FromBase64String($fix1B64))
+          $fix1Hash = (Get-FileHash $fix1Arc -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($fix1Hash -ne 'b11619a5ab7c433b5802151b85865a95254d43f5bcb48a5cf461b6f0dc5d227b') { throw "Compiler-fix SHA mismatch: $fix1Hash" }
+          tar -xJf $fix1Arc -C work-asantepdf
+
+          $fix2 = Get-ChildItem 'pdf-rescue-fix2/fix2-*.b64' | Sort-Object Name
+          if ($fix2.Count -ne 5) { throw "Expected 5 second-fix chunks; found $($fix2.Count)" }
+          $fix2B64 = ($fix2 | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($fix2B64.Length -ne 13136) { throw "Second-fix payload length mismatch: $($fix2B64.Length)" }
+          $fix2Arc = "$env:RUNNER_TEMP\pdf-rescue-fix2.tar.xz"
+          [IO.File]::WriteAllBytes($fix2Arc, [Convert]::FromBase64String($fix2B64))
+          $fix2Hash = (Get-FileHash $fix2Arc -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($fix2Hash -ne '79e99563a8a11f329cf3d4d4c597620ee494920d421f211352a870052d35a858') { throw "Second-fix SHA mismatch: $fix2Hash" }
+          tar -xJf $fix2Arc -C work-asantepdf
+
+      - name: Apply AsantePDF V1 product overlay
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem 'asantepdf-v1/code-*.b64' | Sort-Object Name
+          if ($parts.Count -ne 9) { throw "Expected 9 AsantePDF overlay chunks; found $($parts.Count)" }
+          $overlayB64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($overlayB64.Length -ne 59868) { throw "AsantePDF overlay length mismatch: $($overlayB64.Length)" }
+          $overlayArc = "$env:RUNNER_TEMP\asantepdf-v1-overlay.tar.xz"
+          [IO.File]::WriteAllBytes($overlayArc, [Convert]::FromBase64String($overlayB64))
+          $overlayHash = (Get-FileHash $overlayArc -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($overlayHash -ne 'be179526d815a69ef59a584d6643b5b18b5cb318f1c57170564e7544f7d2aa91') { throw "AsantePDF overlay SHA mismatch: $overlayHash" }
+          tar -xJf $overlayArc -C work-asantepdf
+
+          # First compile gate uses the already-validated icon binary as a carrier asset.
+          # The final Ghana-inspired icon is substituted after the UI/compiler gate is green.
+          Copy-Item 'work-asantepdf/assets/pdf-rescue.ico' 'work-asantepdf/assets/asantepdf.ico' -Force
+
+          # Remove PNG branding resources that are not part of this compact source carrier,
+          # and embed asantepdf.ico as the WPF/window resource as well as the executable icon.
+          $projectPath = 'work-asantepdf/src/PdfRescue.App/PdfRescue.App.csproj'
+          $project = Get-Content $projectPath -Raw
+          $project = $project -replace '(?m)^\s*<Resource Include="\.\.\\\.\.\\assets\\asantepdf-(?:icon|brand)\.png"[^\r\n]*\r?\n', ''
+          if ($project -notmatch 'Resource Include="\.\.\\\.\.\\assets\\asantepdf\.ico"') {
+            $resourceGroup = @"
+          <ItemGroup>
+            <Resource Include="..\..\assets\asantepdf.ico" Link="assets\asantepdf.ico" />
+          </ItemGroup>
+          "@
+            $project = $project -replace '</Project>', "$resourceGroup`r`n</Project>"
+          }
+          Set-Content -Path $projectPath -Value $project -Encoding UTF8
+
+          if (!(Test-Path 'work-asantepdf/src/PdfRescue.App/MainWindow.xaml')) { throw 'AsantePDF MainWindow overlay was not restored.' }
+          if (!(Select-String -Path 'work-asantepdf/src/PdfRescue.App/MainWindow.xaml' -Pattern 'AsantePDF' -Quiet)) { throw 'AsantePDF branding is missing from MainWindow.xaml.' }
+          Write-Host "AsantePDF overlay verified: $overlayHash"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: work-asantepdf/global.json
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --version 6.7.1 -y --no-progress --limit-output
+          if ($LASTEXITCODE -notin @(0,1641,3010)) { exit $LASTEXITCODE }
+
+      - name: Static AsantePDF source checks
+        working-directory: work-asantepdf
+        shell: pwsh
+        run: python scripts/static-source-checks.py
+
+      - name: Build, self-test and package AsantePDF
+        working-directory: work-asantepdf
+        shell: pwsh
+        run: ./scripts/publish-release.ps1
+
+      - name: Install and test exact generated AsantePDF installer
+        working-directory: work-asantepdf
+        shell: pwsh
+        run: |
+          ./scripts/verify-installed-release.ps1 `
+            -InstallerPath './dist/installer/AsantePDF Setup.exe' `
+            -SamplePdf './dist/release-sample.pdf'
+
+      - name: Upload AsantePDF installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AsantePDF-V1-Windows-Installer
+          path: work-asantepdf/dist/installer/AsantePDF Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AsantePDF-V1-Release-Evidence
+          path: |
+            work-asantepdf/dist/selftest-preinstall/**
+            work-asantepdf/dist/selftest-installed/**
+            work-asantepdf/dist/release-sample.pdf
+          if-no-files-found: warn
+          retention-days: 14
