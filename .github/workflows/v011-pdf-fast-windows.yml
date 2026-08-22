@@ -1,0 +1,160 @@
+name: Trace v0.11 PDF fast Windows gate
+
+on:
+  push:
+    branches:
+      - trace-v011-pdf-text-gate
+    paths:
+      - '.github/workflows/v011-pdf-fast-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: trace-v011-pdf-fast-windows
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout PDF candidate control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v011-pdf-text-gate
+          path: control
+
+      - name: Publish fast gate run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/v011-pdf-fast-windows.txt'
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_artifact_run=32579946196
+          overlay_xz_sha256=6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128
+          overlay_patch_sha256=8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0
+          result=running
+          workflow=Trace v0.11 PDF fast Windows gate
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add $path
+          git commit -m 'ci: record PDF fast gate run [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit PDF fast gate run ID.' }
+          git pull --rebase origin trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase PDF fast gate status.' }
+          git push origin HEAD:trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish PDF fast gate run ID.' }
+
+      - name: Download proven transcription-green source
+        uses: actions/download-artifact@v4
+        with:
+          name: Trace-v0.11-Transcription-Proven-Windows-Green-Source
+          path: work
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 32579946196
+
+      - name: Verify downloaded source identity
+        shell: pwsh
+        run: |
+          foreach ($file in @('work/package.json','work/src/app.js','work/src-tauri/Cargo.toml','work/src-tauri/src/transcription.rs','work/tests/v11_transcription.py')) {
+            if (!(Test-Path $file)) { throw "Proven source artifact is incomplete: $file" }
+          }
+          $version=(Get-Content work/package.json -Raw | ConvertFrom-Json).version
+          if ($version -ne '0.11.0') { throw "Unexpected proven source version: $version" }
+
+      - name: Apply corrected PDF text-analysis overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/v011pdf/part* | Sort-Object Name
+          if ($parts.Count -ne 1) { throw "Incomplete PDF overlay. Expected 1 part, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 8556) { throw "PDF overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128') { throw "PDF overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress PDF overlay.' }
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne '8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0') { throw "PDF patch SHA-256 mismatch: $patchHash" }
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay preflight failed against proven source artifact.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay application failed against proven source artifact.' }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: PDF and v0.11 regression contracts
+        shell: pwsh
+        working-directory: work
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax check failed after PDF overlay.' }
+          python tests/v11_pdf_text.py
+          if ($LASTEXITCODE -ne 0) { throw 'PDF text contract failed.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Import/display regression contract failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Usability regression contract failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'Transcription regression contract failed.' }
+
+      - name: Native Windows PDF compile and extraction test
+        shell: pwsh
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'PDF Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Native PDF extraction or regression tests failed.' }
+
+      - name: Publish fast gate result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/v011-pdf-fast-windows.txt'
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_artifact_run=32579946196
+          overlay_xz_sha256=6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128
+          overlay_patch_sha256=8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0
+          result=${{ job.status }}
+          workflow=Trace v0.11 PDF fast Windows gate
+          verification=proven_source_artifact+pdf_overlay_hash+pdf_contract+v011_regressions+rust_check+rust_tests
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase before publishing PDF fast gate result.' }
+          git add $path
+          if (git status --porcelain) {
+            git commit -m 'ci: record PDF fast gate result [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit PDF fast gate result.' }
+            git push origin HEAD:trace-v011-pdf-text-gate
+            if ($LASTEXITCODE -ne 0) { throw 'Could not publish PDF fast gate result.' }
+          }
