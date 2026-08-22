@@ -5,3 +5,4 @@ Storage: patch.b64
 Base64 length: 15848
 Compressed SHA256: 0e7ca3b8762f598bf771b4efea13a9f2e5cde8b2fcb45af7b96dd30bcd39dbe5
 Adds: local offline Whisper transcription, media decoding, timestamped transcript persistence, transcript UI, evidence-safe re-transcription guards.
+Checkpoint trigger: 2026-08-22.
