@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: trace-v011-pdf-text-${{ github.ref }}
@@ -33,6 +33,31 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: control
+
+      - name: Publish isolated PDF gate run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/v011-pdf-text-gate.txt'
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          overlay_xz_sha256=b5f08c9bbab0360314391508b2d68e60f9eb57944854d259fbe5c92fef5dbc1f
+          overlay_patch_sha256=f483d5e74bb689299bed525f261b13519e0be51ed863d9b9a69efc52fce8251b
+          result=running
+          workflow=Trace v0.11 PDF text Windows gate
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add $path
+          git commit -m 'ci: record isolated PDF text gate run [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit the isolated PDF gate run ID.' }
+          git pull --rebase origin trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase the isolated PDF gate status.' }
+          git push origin HEAD:trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the isolated PDF gate run ID.' }
 
       - name: Checkout proven transcription source
         uses: actions/checkout@v4
@@ -166,3 +191,31 @@ jobs:
             source/work/setup-shell/src-tauri/tauri.conf.json
             source/work/setup-shell/src-tauri/src/**
             source/work/tests/**
+
+      - name: Publish isolated PDF gate result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/v011-pdf-text-gate.txt'
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          overlay_xz_sha256=b5f08c9bbab0360314391508b2d68e60f9eb57944854d259fbe5c92fef5dbc1f
+          overlay_patch_sha256=f483d5e74bb689299bed525f261b13519e0be51ed863d9b9a69efc52fce8251b
+          result=${{ job.status }}
+          workflow=Trace v0.11 PDF text Windows gate
+          verification=transcription_green_replay+pdf_overlay_hash+frontend_contracts+pdf_contract+v011_regressions+rust_check+rust_tests+artifact_upload
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin trace-v011-pdf-text-gate
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase before publishing the isolated PDF gate result.' }
+          git add $path
+          if (git status --porcelain) {
+            git commit -m 'ci: record isolated PDF text gate result [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit the isolated PDF gate result.' }
+            git push origin HEAD:trace-v011-pdf-text-gate
+            if ($LASTEXITCODE -ne 0) { throw 'Could not publish the isolated PDF gate result.' }
+          }
