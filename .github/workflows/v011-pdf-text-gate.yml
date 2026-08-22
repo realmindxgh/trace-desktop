@@ -44,8 +44,8 @@ jobs:
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           trigger_sha=${{ github.sha }}
-          overlay_xz_sha256=b5f08c9bbab0360314391508b2d68e60f9eb57944854d259fbe5c92fef5dbc1f
-          overlay_patch_sha256=f483d5e74bb689299bed525f261b13519e0be51ed863d9b9a69efc52fce8251b
+          overlay_xz_sha256=6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128
+          overlay_patch_sha256=8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0
           result=running
           workflow=Trace v0.11 PDF text Windows gate
           "@ | Set-Content $path
@@ -131,16 +131,16 @@ jobs:
           $parts=Get-ChildItem ../control/bootstrap/v011pdf/part* | Sort-Object Name
           if ($parts.Count -ne 1) { throw "Incomplete PDF overlay. Expected 1 part, found $($parts.Count)." }
           $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
-          if ($b64.Length -ne 8368) { throw "PDF overlay base64 length mismatch: $($b64.Length)" }
+          if ($b64.Length -ne 8556) { throw "PDF overlay base64 length mismatch: $($b64.Length)" }
           $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch.xz'
           [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
           $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne 'b5f08c9bbab0360314391508b2d68e60f9eb57944854d259fbe5c92fef5dbc1f') { throw "PDF overlay SHA-256 mismatch: $hash" }
+          if ($hash -ne '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128') { throw "PDF overlay SHA-256 mismatch: $hash" }
           $patch=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch'
           python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
           if ($LASTEXITCODE -ne 0) { throw 'Could not decompress PDF overlay.' }
           $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($patchHash -ne 'f483d5e74bb689299bed525f261b13519e0be51ed863d9b9a69efc52fce8251b') { throw "PDF patch SHA-256 mismatch: $patchHash" }
+          if ($patchHash -ne '8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0') { throw "PDF patch SHA-256 mismatch: $patchHash" }
           git apply --check --directory=work $patch
           if ($LASTEXITCODE -ne 0) { throw 'PDF overlay preflight failed.' }
           git apply --directory=work $patch
@@ -202,8 +202,8 @@ jobs:
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           trigger_sha=${{ github.sha }}
-          overlay_xz_sha256=b5f08c9bbab0360314391508b2d68e60f9eb57944854d259fbe5c92fef5dbc1f
-          overlay_patch_sha256=f483d5e74bb689299bed525f261b13519e0be51ed863d9b9a69efc52fce8251b
+          overlay_xz_sha256=6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128
+          overlay_patch_sha256=8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0
           result=${{ job.status }}
           workflow=Trace v0.11 PDF text Windows gate
           verification=transcription_green_replay+pdf_overlay_hash+frontend_contracts+pdf_contract+v011_regressions+rust_check+rust_tests+artifact_upload
