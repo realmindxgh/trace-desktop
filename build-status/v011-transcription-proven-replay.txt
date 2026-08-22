@@ -1,6 +1,7 @@
-run_id=32578893417
-run_number=1
+run_id=32579542328
+run_number=2
 source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
-trigger_sha=6f05c0753648c71949d0dd4a0d67635d4965e922
+trigger_sha=6dc860cdd0652f7d30b9e3fd3119d27bf5f7429f
+transcription_overlay_sha256=81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a
 result=running
 workflow=Trace v0.11 transcription proven Windows replay
