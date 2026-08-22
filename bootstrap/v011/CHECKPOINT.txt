@@ -1,0 +1,4 @@
+Trace v0.11 checkpoint trigger.
+
+This file intentionally does not participate in the verified part* overlay payload.
+It exists to trigger the corrected Windows feature-check workflow without changing overlay bytes or hashes.
