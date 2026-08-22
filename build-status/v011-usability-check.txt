@@ -1,5 +1,6 @@
 run_id=32573758437
 run_number=4
 source_sha=1efd78f27de7c8543e892dc0687003be748360c5
-result=running
+result=success
 workflow=Trace v0.11 usability checkpoint
+verification=frontend_contracts+rust_check+rust_tests+artifact_upload
