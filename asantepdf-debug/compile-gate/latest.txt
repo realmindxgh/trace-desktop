@@ -1,0 +1,25 @@
+source_sha=b652dc3f3e81c67a0e93a97b1f7f43985f537c50
+restore_exit=0
+build_exit=0
+
+=== RESTORE ===
+  Determining projects to restore...
+  Restored D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.Infrastructure\PdfRescue.Infrastructure.csproj (in 175 ms).
+  Restored D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.Core\PdfRescue.Core.csproj (in 143 ms).
+  Restored D:\a\trace-desktop\trace-desktop\work-compile\tests\PdfRescue.SmokeTests\PdfRescue.SmokeTests.csproj (in 6 ms).
+  Restored D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.Cli\PdfRescue.Cli.csproj (in 4 ms).
+  Restored D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.App\PdfRescue.App.csproj (in 10.9 sec).
+
+=== BUILD ===
+  PdfRescue.Core -> D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.Core\bin\Release\net10.0\PdfRescue.Core.dll
+  PdfRescue.Infrastructure -> D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.Infrastructure\bin\Release\net10.0\PdfRescue.Infrastructure.dll
+  PdfRescue.SmokeTests -> D:\a\trace-desktop\trace-desktop\work-compile\tests\PdfRescue.SmokeTests\bin\Release\net10.0\PdfRescue.SmokeTests.dll
+  PdfRescue.App -> D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.App\bin\x64\Release\net10.0-windows10.0.19041.0\AsantePDF.dll
+  PdfRescue.Cli -> D:\a\trace-desktop\trace-desktop\work-compile\src\PdfRescue.Cli\bin\Release\net10.0\PdfRescue.Cli.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:24.46
+
