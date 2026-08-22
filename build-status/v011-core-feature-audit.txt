@@ -4,5 +4,6 @@ trigger_sha=86494657c6d39e36b2784480ac375168ce9fcbac
 source_run=32581268832
 source_artifact_id=9478052364
 source_artifact_sha256=5efa255ba2047c90c41b5b3cce9516049025339c6d87a64a5716bc20e5e156df
-result=running
+result=success
 workflow=Trace v0.11 core feature preservation gate
+verification=pdf_green_source_identity+production_empty+search+source_management+coding+memos+themes+analysis+evidence_linked_write+undo_redo+session_recovery+backups+refi_qda+office_imports+survey_imports+annotations+transcription+pdf_text+schema+version_alignment
