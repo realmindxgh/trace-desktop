@@ -1,5 +1,5 @@
-run_id=32593396417
-trigger_sha=27fe09744a8eba442616d514938c1da4406fe5c6
+run_id=32593511243
+trigger_sha=d6ed22ecc28073f18eec97bcfb8acf40bcbe31b0
 version=0.11.0
 result=running
 workflow=Trace v0.11 installer v2 GUI verification
