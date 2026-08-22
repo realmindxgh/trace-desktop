@@ -1,0 +1,274 @@
+name: Trace Windows v0.10 exact installer verification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/windows-v010-final-v2.yml'
+      - 'ci/add_trace_setup_cli.py'
+      - 'bootstrap/v2/**'
+      - 'bootstrap/v010/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trace-windows-v010-exact-final
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 80
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish verification run ID
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace Windows v0.10 exact installer verification
+          "@ | Set-Content build-status/windows-v010-exact-final.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/windows-v010-exact-final.txt
+          git commit -m 'ci: record exact installer verification run [skip ci]'
+          git push origin HEAD:main
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct verified Trace base source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v2/part* | Sort-Object Name
+          if ($parts.Count -ne 8) { throw "Incomplete Trace base bootstrap. Expected 8 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw "Trace base SHA-256 mismatch: $hash" }
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
+          if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace base source reconstruction failed.' }
+
+      - name: Apply verified v0.10 functional overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete Trace v0.10 patch. Expected 4 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "Trace v0.10 patch length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw "Trace v0.10 patch SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch preflight failed.' }
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch application failed.' }
+          New-Item -ItemType Directory -Force -Path work/tests | Out-Null
+          foreach ($test in @('schema_contract.py','v07_installer.py','v08_release.py','v09_release.py')) { Copy-Item "bootstrap/v010/tests/$test" "work/tests/$test" -Force }
+          python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text(encoding='utf-8'))['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 overlay verified')"
+
+      - name: Add branded setup silent CLI
+        shell: pwsh
+        run: |
+          python ci/add_trace_setup_cli.py
+          $main=Get-Content work/setup-shell/src-tauri/src/main.rs -Raw
+          foreach ($token in @('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','fn silent_install(')) {
+            if (!$main.Contains($token)) { throw "Missing setup CLI token: $token" }
+          }
+
+      - name: Apply comfortable typography
+        working-directory: work
+        shell: pwsh
+        run: |
+          @'
+
+          /* TRACE READABILITY PASS 2026-08-22 */
+          :root { --trace-font-body:15.5px; --trace-font-ui:14.5px; --trace-font-small:12.5px; --trace-font-transcript:17px; }
+          html { font-size:16px; }
+          body { font-size:var(--trace-font-body)!important; line-height:1.5; }
+          button,input,select,textarea { font-size:var(--trace-font-ui)!important; }
+          p,li,td,th,dt,dd { font-size:var(--trace-font-body); line-height:1.55; }
+          h1 { font-size:clamp(28px,2.1vw,34px)!important; line-height:1.16; }
+          h2 { font-size:clamp(20px,1.55vw,24px)!important; line-height:1.22; }
+          h3 { font-size:16.5px!important; line-height:1.3; }
+          h4 { font-size:13px!important; }
+          small,.eyebrow,.theme-kicker,.writing-label { font-size:var(--trace-font-small)!important; line-height:1.35; }
+          .page-head p { font-size:16px!important; line-height:1.55; max-width:76ch; }
+          .primary,.secondary,.mini-btn,.text-btn,.icon-btn { font-size:var(--trace-font-ui)!important; }
+          .dock-item span { font-size:13.5px!important; }
+          .inspector,.source-card,.analysis-card,.theme-card,.code-chip-row,.link-card,.mode-card,.interop-panel { font-size:14.5px!important; }
+          .inspector h4,.menu-section>small,.code-menu>h4 { font-size:12.5px!important; }
+          .transcript-line p { font-size:var(--trace-font-transcript)!important; line-height:1.72!important; letter-spacing:.002em; }
+          .transcript-line small,.transcript-line .speaker,.transcript-line .line-number { font-size:12.5px!important; }
+          .code-option,.selection-tools button { font-size:14px!important; }
+          .stat-grid b { font-size:20px!important; }
+          .stat-grid small { font-size:12px!important; }
+          .choice-card b,.source-card b,.link-card b { font-size:15px!important; }
+          .choice-card p,.source-card p,.theme-card p,.analysis-card p,.link-card p,.mode-card p { font-size:14.5px!important; line-height:1.5; }
+          @media (min-width:1500px){ :root { --trace-font-body:16px; --trace-font-ui:15px; --trace-font-transcript:17.5px; } }
+          '@ | Add-Content src/styles.css
+          @'
+
+          /* TRACE SETUP READABILITY PASS 2026-08-22 */
+          html { font-size:16px; }
+          body { font-size:15.5px!important; line-height:1.5; }
+          button,input,select,textarea { font-size:14.5px!important; }
+          p,li { font-size:15px!important; line-height:1.55; }
+          h1 { font-size:clamp(28px,2.2vw,34px)!important; line-height:1.16; }
+          h2 { font-size:21px!important; line-height:1.25; }
+          h3 { font-size:16px!important; }
+          small,.eyebrow { font-size:12.5px!important; line-height:1.35; }
+          .maintenance-card,.preserve-card,.preflight-card,.existing-card { font-size:15px!important; }
+          .setup-dock,.setup-dock button { font-size:13.5px!important; }
+          '@ | Add-Content setup-shell/src/styles.css
+
+      - name: Prepare Windows assets
+        working-directory: work
+        shell: pwsh
+        run: |
+          python -m pip install pillow
+          python scripts/ci_prepare_assets.py
+          Copy-Item src-tauri/windows/installer-header.bmp src-tauri/windows/trace-installer-header.bmp -Force
+          Copy-Item src-tauri/windows/installer-sidebar.bmp src-tauri/windows/trace-installer-sidebar.bmp -Force
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
+          Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
+
+      - name: Functional contracts
+        working-directory: work
+        run: |
+          node --check src/app.js
+          node --check setup-shell/src/app.js
+          python tests/schema_contract.py
+          python tests/v07_installer.py
+          python tests/v08_release.py
+          python tests/v09_release.py
+          python tests/v10_functional.py
+
+      - name: Install Tauri CLI
+        working-directory: work
+        run: npm install --no-save @tauri-apps/cli@2.11.0
+
+      - name: Build and test native Trace
+        working-directory: work
+        run: |
+          npm run build
+          cargo check --manifest-path src-tauri/Cargo.toml
+          cargo test --manifest-path src-tauri/Cargo.toml
+          npx tauri build
+
+      - name: Stage exact native installer payload
+        shell: pwsh
+        run: |
+          $payload=Get-ChildItem work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (!$payload) { throw 'Tauri NSIS payload not found.' }
+          New-Item -ItemType Directory -Force -Path work/setup-shell/src-tauri/payload | Out-Null
+          Copy-Item $payload.FullName work/setup-shell/src-tauri/payload/trace-payload.exe -Force
+          $bytes=[IO.File]::ReadAllBytes('work/setup-shell/src-tauri/payload/trace-payload.exe')
+          if ($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Embedded installer payload is not a credible Windows executable.' }
+
+      - name: Build branded TraceSetup.exe
+        working-directory: work/setup-shell
+        shell: pwsh
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          npm run build
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Trace setup shell check failed with exit code $LASTEXITCODE" }
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw "Trace setup shell release build failed with exit code $LASTEXITCODE" }
+
+      - name: Assemble exact candidate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path work/release | Out-Null
+          $setup='work/setup-shell/src-tauri/target/release/trace-setup.exe'
+          if (!(Test-Path $setup)) { throw 'Trace setup shell executable is missing.' }
+          Copy-Item $setup work/release/TraceSetup.exe -Force
+          $hash=(Get-FileHash work/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TraceSetup.exe  $hash" | Set-Content work/release/SHA256.txt
+
+      - name: Install, launch and uninstall through exact TraceSetup.exe
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path work/release/TraceSetup.exe).Path
+          $installDir=Join-Path $env:RUNNER_TEMP 'TraceExactSetupInstall'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          $researchDir=Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Trace CI Research Data'
+          New-Item -ItemType Directory -Force -Path $researchDir | Out-Null
+          $sentinel=Join-Path $researchDir 'research-data-must-survive.txt'
+          'Trace research data preservation sentinel' | Set-Content $sentinel
+
+          & $setup --silent-install --install-dir $installDir
+          if ($LASTEXITCODE -ne 0) { throw "TraceSetup.exe silent install failed with exit code $LASTEXITCODE." }
+          $installedTrace=Join-Path $installDir 'Trace.exe'
+          if (!(Test-Path $installedTrace)) { throw "Installed Trace.exe was not found at $installedTrace." }
+          $installedHash=(Get-FileHash $installedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          $builtHash=(Get-FileHash work/src-tauri/target/release/Trace.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installedHash -ne $builtHash) { throw 'Installed Trace.exe does not match the built release executable.' }
+
+          $trace=Start-Process -FilePath $installedTrace -WorkingDirectory $installDir -PassThru
+          Start-Sleep -Seconds 10
+          if ($trace.HasExited) { throw "Installed Trace.exe exited unexpectedly with code $($trace.ExitCode)." }
+          Stop-Process -Id $trace.Id -Force
+          Start-Sleep -Seconds 2
+
+          & $setup --silent-uninstall --install-dir $installDir
+          if ($LASTEXITCODE -ne 0) { throw "TraceSetup.exe silent uninstall failed with exit code $LASTEXITCODE." }
+          Start-Sleep -Seconds 3
+          if (Test-Path $installedTrace) { throw 'Trace.exe is still present after branded setup uninstall.' }
+          if (!(Test-Path $sentinel)) { throw 'Research-data sentinel was removed during uninstall.' }
+
+          $setupHash=(Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          Trace 0.10.0 exact Windows verification
+          source_sha=${{ github.sha }}
+          run_id=${{ github.run_id }}
+          TraceSetup_sha256=$setupHash
+          exact_branded_install=true
+          installed_exe_matches_build=true
+          installed_copy_launched=true
+          installed_copy_survived_10_seconds=true
+          exact_branded_uninstall=true
+          research_data_preserved=true
+          comfortable_typography=true
+          "@ | Set-Content work/release/FINAL-VERIFICATION.txt
+          Get-Content work/release/FINAL-VERIFICATION.txt
+
+      - name: Upload exact verified release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.10-Exact-Verified-Windows-Release
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/release/TraceSetup.exe
+            work/release/SHA256.txt
+            work/release/FINAL-VERIFICATION.txt
+            work/src-tauri/target/release/Trace.exe
+            work/src-tauri/target/release/bundle/nsis/*.exe
+            work/src-tauri/target/release/bundle/msi/*.msi
