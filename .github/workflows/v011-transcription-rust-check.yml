@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/v011-transcription-rust-check.yml'
-      - 'ci/reconstruct_v011.py'
+      - 'ci/reconstruct_v011.ps1'
       - 'bootstrap/v011transcribe/**'
 
 permissions:
@@ -62,8 +62,8 @@ jobs:
       - name: Reconstruct verified v0.11 transcription source
         shell: pwsh
         run: |
-          python ci/reconstruct_v011.py
-          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 deterministic reconstruction failed.' }
+          & ./ci/reconstruct_v011.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 PowerShell reconstruction failed.' }
 
       - name: Prepare Windows assets
         working-directory: work
