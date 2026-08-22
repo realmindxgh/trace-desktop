@@ -1,0 +1,79 @@
+name: Trace v0.10 reconstructed source snapshot
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/trace-source-snapshot.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Reconstruct verified Trace base source
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem bootstrap/v2/part* | Sort-Object Name
+          if ($parts.Count -ne 8) { throw "Incomplete Trace base bootstrap. Expected 8 parts, found $($parts.Count)." }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive = Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
+          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw "Trace base SHA-256 mismatch: $hash" }
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
+          if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace base source reconstruction failed.' }
+
+      - name: Apply verified v0.10 functional overlay
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete Trace v0.10 patch. Expected 4 parts, found $($parts.Count)." }
+          $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "Trace v0.10 patch length mismatch: $($b64.Length)" }
+          $compressed = Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed, [Convert]::FromBase64String($b64))
+          $hash = (Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw "Trace v0.10 patch SHA-256 mismatch: $hash" }
+          $patch = Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch preflight failed.' }
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.10 patch application failed.' }
+          python -c "import json,pathlib; p=pathlib.Path('work'); assert json.loads((p/'package.json').read_text(encoding='utf-8'))['version']=='0.10.0'; assert (p/'tests/v10_functional.py').is_file(); print('Trace v0.10 source overlay verified')"
+
+      - name: Upload reconstructed source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.10-Reconstructed-Source
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/package.json
+            work/src/**
+            work/database/**
+            work/src-tauri/Cargo.toml
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/setup-shell/package.json
+            work/setup-shell/src/**
+            work/setup-shell/src-tauri/Cargo.toml
+            work/setup-shell/src-tauri/tauri.conf.json
+            work/setup-shell/src-tauri/src/**
+            work/tests/**
