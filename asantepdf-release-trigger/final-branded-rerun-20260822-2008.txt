@@ -1,0 +1,1 @@
+Trigger the final branded AsantePDF Windows release gate using the verified Ghana-inspired icon carrier and current compile-green source.
