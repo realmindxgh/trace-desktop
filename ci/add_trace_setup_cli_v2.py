@@ -77,29 +77,18 @@ if "document.querySelector('#next')?.click()" not in app:
     git_apply_to_work(click_patch, 'real primary-button GUI gate overlay')
     app = APP_JS.read_text(encoding='utf-8')
 
-# Tauri serializes the Rust CI request field as `install_dir`. The test hook was
-# originally written in frontend camelCase, which allowed the real GUI path to
-# install successfully into the default directory while the outer gate checked
-# a different requested directory. Accept Rust snake_case explicitly and keep
-# camelCase only as a compatibility fallback. This changes only the CI hook;
-# the normal user-selected install path remains untouched.
-if 'state.ciGui' in app:
-    fixed = app.replace(
-        'state.ciGui?.installDir',
-        '(state.ciGui?.install_dir||state.ciGui?.installDir)',
-    ).replace(
-        'state.ciGui.installDir',
-        '(state.ciGui.install_dir||state.ciGui.installDir)',
-    )
-    if fixed != app:
-        print('Normalized installer v2 CI GUI install-directory handoff to Rust snake_case.')
-        APP_JS.write_text(fixed, encoding='utf-8')
-        app = fixed
-    if 'state.ciGui.install_dir' not in app and 'state.ciGui?.install_dir' not in app:
-        for line_no, line in enumerate(app.splitlines(), 1):
-            if any(token in line for token in ('ciGui', 'ci_gui_request', 'installDir', 'install_dir')):
-                print(f'CI_GUI_SOURCE[{line_no}]={line}')
-        raise SystemExit('Installer v2 CI GUI hook does not consume the Rust install_dir field.')
+# The Tauri command response can surface the Rust install_dir field in either
+# snake_case or camelCase at the JavaScript boundary. The CI-only GUI request
+# must preserve the exact requested directory before it clicks the real Install
+# button. This does not alter the normal user-selected install-location flow.
+old_handoff = "if(ci?.install_dir){state.ciGui=true;state.installDir=ci.install_dir;state.shortcuts=false;state.launch=false}"
+new_handoff = "const ciInstallDir=ci?.install_dir||ci?.installDir;if(ciInstallDir){state.ciGui=true;state.installDir=ciInstallDir;state.shortcuts=false;state.launch=false}"
+if old_handoff in app:
+    app = app.replace(old_handoff, new_handoff, 1)
+    APP_JS.write_text(app, encoding='utf-8')
+    print('Normalized installer v2 CI request response install-directory key.')
+elif new_handoff not in app:
+    raise SystemExit('Could not locate installer v2 CI GUI request install-directory handoff.')
 
 text = MAIN_RS.read_text(encoding='utf-8')
 
