@@ -9,7 +9,7 @@ on:
       - 'bootstrap/v011transcribe/**'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: trace-v011-transcription-native
@@ -24,6 +24,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Publish native run ID
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.11 transcription native Windows check
+          "@ | Set-Content build-status/v011-transcription-native.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v011-transcription-native.txt
+          git commit -m 'ci: record v0.11 native transcription run [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit native transcription run ID.' }
+          git pull --rebase origin main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase native transcription run ID.' }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish native transcription run ID.' }
 
       - name: Set up Node
         uses: actions/setup-node@v4
