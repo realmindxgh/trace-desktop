@@ -1,0 +1,1 @@
+Trigger the AsantePDF V1 Windows release gate after installing the approved Ghana-inspired application icon asset.
