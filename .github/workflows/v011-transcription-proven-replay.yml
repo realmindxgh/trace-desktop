@@ -35,6 +35,7 @@ jobs:
           run_number=${{ github.run_number }}
           source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
           trigger_sha=${{ github.sha }}
+          transcription_overlay_sha256=81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a
           result=running
           workflow=Trace v0.11 transcription proven Windows replay
           "@ | Set-Content build-status/v011-transcription-proven-replay.txt
@@ -54,6 +55,25 @@ jobs:
           ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
           path: source
 
+      - name: Inject corrected transcription overlay into proven source
+        shell: pwsh
+        run: |
+          Copy-Item control/bootstrap/v011transcribe/part00 source/bootstrap/v011transcribe/part00 -Force
+          Copy-Item control/bootstrap/v011transcribe/part01 source/bootstrap/v011transcribe/part01 -Force
+          $wf='source/.github/workflows/v011-transcription-check.yml'
+          $text=Get-Content $wf -Raw
+          $text=$text.Replace('17960','18488')
+          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a')
+          Set-Content $wf $text
+          $parts=Get-ChildItem source/bootstrap/v011transcribe/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw 'Corrected transcription overlay must contain exactly two parts.' }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 18488) { throw "Corrected transcription overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011transcribe-corrected.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a') { throw "Corrected transcription overlay SHA-256 mismatch: $hash" }
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -67,7 +87,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Replay proven reconstruction and contracts without Unix bindings
+      - name: Replay proven reconstruction and contracts with native Windows bindings
         shell: pwsh
         working-directory: source
         run: |
@@ -121,3 +141,30 @@ jobs:
             source/work/setup-shell/src-tauri/tauri.conf.json
             source/work/setup-shell/src-tauri/src/**
             source/work/tests/**
+
+      - name: Publish replay result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $status=@"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=eebc47e418003811a0cb27e1b684601a5c77bdcf
+          trigger_sha=${{ github.sha }}
+          transcription_overlay_sha256=81f94716febbc83b9e2d998e2db1166eff2e2669c269eac4789230fbd23b677a
+          result=${{ job.status }}
+          workflow=Trace v0.11 transcription proven Windows replay
+          verification=proven_reconstruction+all_v011_contracts+native_whisper_bindings+rust_check+rust_tests+artifact_upload
+          "@
+          git reset --hard HEAD
+          git pull --rebase origin main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase before publishing replay result.' }
+          $status | Set-Content build-status/v011-transcription-proven-replay.txt
+          git add build-status/v011-transcription-proven-replay.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record proven transcription replay result [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit replay result.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not publish replay result.' }
+          }
