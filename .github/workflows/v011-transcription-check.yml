@@ -1,0 +1,226 @@
+name: Trace v0.11 local transcription checkpoint
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/v011-transcription-check.yml'
+      - 'bootstrap/v011transcribe/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trace-v011-transcription-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 70
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish checkpoint run ID
+        shell: pwsh
+        run: |
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git pull --rebase origin main
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.11 local transcription checkpoint
+          "@ | Set-Content build-status/v011-transcription-check.txt
+          git add build-status/v011-transcription-check.txt
+          if (git status --porcelain) { git commit -m 'ci: record v0.11 transcription checkpoint [skip ci]' }
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct verified Trace base source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v2/part* | Sort-Object Name
+          if ($parts.Count -ne 8) { throw "Incomplete Trace base bootstrap. Expected 8 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 101964) { throw "Trace base bootstrap length mismatch: $($b64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'trace-base.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074') { throw "Trace base SHA-256 mismatch: $hash" }
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          python -c "import tarfile; tarfile.open(r'$archive','r:xz').extractall('work')"
+          if (!(Test-Path work/src-tauri/Cargo.toml)) { throw 'Trace base reconstruction failed.' }
+
+      - name: Apply verified v0.10 overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v010/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete v0.10 overlay. Expected 4 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 43260) { throw "v0.10 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v010.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da') { throw "v0.10 overlay hash mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v010.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.10 overlay preflight failed.' }
+          git apply --directory=work --exclude=tests/v07_installer.py --exclude=tests/v08_release.py --exclude=tests/v09_release.py $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.10 overlay application failed.' }
+          New-Item -ItemType Directory -Force -Path work/tests | Out-Null
+          foreach ($test in @('schema_contract.py','v07_installer.py','v08_release.py','v09_release.py')) { Copy-Item "bootstrap/v010/tests/$test" "work/tests/$test" -Force }
+
+      - name: Apply verified v0.11 imports and display overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v011/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Incomplete v0.11 overlay. Expected 2 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 15296) { throw "v0.11 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6cd4bdd47a095341ba6151d6addb73f47a005ad57110d3ade443449f9e9f40f2') { throw "v0.11 overlay hash mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 overlay application failed.' }
+
+      - name: Apply verified v0.11 usability overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem bootstrap/v011plus/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Incomplete v0.11 usability overlay. Expected 2 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 13960) { throw "v0.11 usability overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011plus.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '60dccf75689c9f46a8e76ecee0356ecaf2e69713c6e624bbacaaa6e7b358ef5a') { throw "v0.11 usability overlay hash mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011plus.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 usability overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 usability overlay application failed.' }
+
+      - name: Apply v0.11 local transcription overlay
+        shell: pwsh
+        run: |
+          $b64=(Get-Content bootstrap/v011transcribe/patch.b64 -Raw).Trim()
+          if ($b64.Length -ne 15848) { throw "v0.11 transcription overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-transcription.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '0e7ca3b8762f598bf771b4efea13a9f2e5cde8b2fcb45af7b96dd30bcd39dbe5') { throw "v0.11 transcription overlay hash mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-transcription.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 transcription overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 transcription overlay application failed.' }
+          if (!(Test-Path work/src-tauri/src/transcription.rs)) { throw 'Trace local transcription backend was not reconstructed.' }
+
+      - name: Prepare Windows assets
+        working-directory: work
+        shell: pwsh
+        run: |
+          python -m pip install pillow
+          python scripts/ci_prepare_assets.py
+          Copy-Item src-tauri/windows/installer-header.bmp src-tauri/windows/trace-installer-header.bmp -Force
+          Copy-Item src-tauri/windows/installer-sidebar.bmp src-tauri/windows/trace-installer-sidebar.bmp -Force
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/icons | Out-Null
+          Copy-Item src-tauri/icons/icon.ico setup-shell/src-tauri/icons/icon.ico -Force
+
+      - name: Frontend and feature contracts
+        working-directory: work
+        shell: pwsh
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace JavaScript syntax check failed.' }
+          python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace schema contract failed.' }
+          $compat='tests/v10_compat.py'
+          (Get-Content tests/v10_functional.py -Raw).Replace("'0.10.0'","'0.11.0'") | Set-Content $compat
+          python $compat
+          $compatExit=$LASTEXITCODE
+          Remove-Item $compat -Force
+          if ($compatExit -ne 0) { throw 'Trace v0.10 behavioral regression contract failed under v0.11.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 import/display contract failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 usability contract failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 transcription contract failed.' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 frontend build failed.' }
+
+      - name: Rust compile and tests
+        working-directory: work
+        shell: pwsh
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 transcription Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.11 transcription Rust tests failed.' }
+
+      - name: Upload reconstructed transcription checkpoint source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.11-Local-Transcription-Checkpoint-Source
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            work/package.json
+            work/src/**
+            work/database/**
+            work/src-tauri/Cargo.toml
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/tests/**
+
+      - name: Publish checkpoint result
+        if: always()
+        shell: pwsh
+        run: |
+          $status=@"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace v0.11 local transcription checkpoint
+          "@
+          git reset --hard HEAD
+          if (Test-Path work) { Remove-Item work -Recurse -Force }
+          git clean -fd work | Out-Null
+          git pull --rebase origin main
+          $status | Set-Content build-status/v011-transcription-check.txt
+          git add build-status/v011-transcription-check.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.11 transcription result [skip ci]'
+            git pull --rebase origin main
+            git push origin HEAD:main
+          }
