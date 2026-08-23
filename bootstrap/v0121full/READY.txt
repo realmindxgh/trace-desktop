@@ -1,0 +1,9 @@
+version=0.12.1
+source_base_run=32638636953
+base_artifact=Trace-v0.12-Analysis-Green-Source
+patch_sha256=0408249ac1e0496ce0923545ca77979577ce29d4176b4beac2223de66fb63c94
+patch_xz_sha256=d67876cc9cc5cf281659383b9d287959b407ae71efe44661ac2db4ef4387af59
+patch_base64_sha256=5bd2488078d8d15f2bd44fcddb016249614088fca4dea17d255b06accd1b22d2
+patch_base64_length=94460
+parts=6
+changed_files=16
