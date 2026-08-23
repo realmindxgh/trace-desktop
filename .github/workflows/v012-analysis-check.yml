@@ -1,0 +1,182 @@
+name: Trace v0.12 analysis and intercoder gate
+
+on:
+  push:
+    branches:
+      - trace-v012
+    paths:
+      - '.github/workflows/v012-analysis-check.yml'
+      - 'bootstrap/v012/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-v012-analysis-gate
+  cancel-in-progress: true
+
+jobs:
+  analysis-gate:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
+      CARGO_TARGET_DIR: ${{ runner.temp }}\trace-v012-target
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout v0.12 control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v012
+          path: control
+
+      - name: Publish gate run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.12 analysis and intercoder gate
+          "@ | Set-Content build-status/v012-analysis-gate.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v012-analysis-gate.txt
+          git commit -m 'ci: record v0.12 analysis gate run [skip ci]'
+          git pull --rebase origin trace-v012
+          git push origin HEAD:trace-v012
+
+      - name: Download exact green v0.11 baseline source
+        shell: pwsh
+        run: |
+          gh run download 32635242879 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Clean-Exact-Baseline-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the exact green baseline source.' }
+          if (-not (Test-Path 'work/src/app.js')) { throw 'Baseline source artifact is incomplete.' }
+          if ((Get-Content 'work/package.json' -Raw) -notmatch '"version"\s*:\s*"0\.11\.0"') { throw 'Baseline is not Trace 0.11.0.' }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify and apply v0.12 overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/v012/part* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Expected 2 v0.12 overlay parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 22488) { throw "v0.12 overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v012.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $compressedHash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($compressedHash -ne '2a226e1c683f44d07bd4b12c8271a126820c6e39415bb72e561f005f75f38e83') { throw "v0.12 compressed overlay SHA-256 mismatch: $compressedHash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v012.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne 'c022173965e5a554e6564313566f4887ddb58d44d9d6b930d74beccd19d41ee3') { throw "v0.12 patch SHA-256 mismatch: $patchHash" }
+          Push-Location work
+          git init | Out-Null
+          git config core.whitespace cr-at-eol
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'v0.12 overlay does not apply cleanly to the exact baseline.' }
+          git apply $patch
+          $exit=$LASTEXITCODE
+          Pop-Location
+          if ($exit -ne 0) { throw 'Could not apply the v0.12 overlay.' }
+
+      - name: JavaScript, database and analysis contracts
+        shell: pwsh
+        working-directory: work
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace app JavaScript syntax failed.' }
+          node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup JavaScript syntax failed.' }
+          node tests/v12_analysis_math.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Intercoder mathematics contract failed.' }
+          python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Schema contract failed.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 Office/import/display regression failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 usability regression failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 transcription regression failed.' }
+          python tests/v11_pdf_text.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 PDF text regression failed.' }
+          python tests/v12_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.12 analysis/intercoder contract failed.' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          Push-Location setup-shell
+          npm run build
+          $setupBuild=$LASTEXITCODE
+          Pop-Location
+          if ($setupBuild -ne 0) { throw 'Trace setup frontend build failed.' }
+
+      - name: Rust compile and unit tests
+        shell: pwsh
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 Rust tests failed.' }
+          cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 setup-shell Rust compile check failed.' }
+
+      - name: Upload proven v0.12 source checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12-Analysis-Green-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            work/package.json
+            work/src/**
+            work/database/**
+            work/src-tauri/Cargo.toml
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/setup-shell/package.json
+            work/setup-shell/scripts/**
+            work/setup-shell/src/**
+            work/setup-shell/src-tauri/Cargo.toml
+            work/setup-shell/src-tauri/tauri.conf.json
+            work/setup-shell/src-tauri/src/**
+            work/tests/**
+            work/scripts/**
+
+      - name: Publish gate result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin trace-v012
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace v0.12 analysis and intercoder gate
+          "@ | Set-Content build-status/v012-analysis-gate.txt
+          git add build-status/v012-analysis-gate.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.12 analysis gate result [skip ci]'
+            git push origin HEAD:trace-v012
+          }
