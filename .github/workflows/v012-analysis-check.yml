@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/v012-analysis-check.yml'
       - 'bootstrap/v012/**'
+      - 'bootstrap/v012native/**'
   workflow_dispatch:
 
 permissions:
@@ -99,6 +100,29 @@ jobs:
           Pop-Location
           if ($exit -ne 0) { throw 'Could not apply the v0.12 overlay.' }
 
+      - name: Apply v0.12 native compile correction
+        shell: pwsh
+        run: |
+          $b64=Get-Content control/bootstrap/v012native/part00 -Raw
+          if ($b64.Length -ne 844) { throw "v0.12 native correction base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v012-native-fix.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $compressedHash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($compressedHash -ne '3cf5037a936a5319581bfaa867ff28891f6ce1332e03e3e6805c169802b93258') { throw "v0.12 native correction compressed SHA-256 mismatch: $compressedHash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v012-native-fix.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne 'd3958b5e39a9c519210eb2eed1b20edb2e6431d3868feb7fdcc913f023381175') { throw "v0.12 native correction patch SHA-256 mismatch: $patchHash" }
+          Push-Location work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'v0.12 native correction does not apply cleanly.' }
+          git apply $patch
+          $exit=$LASTEXITCODE
+          Pop-Location
+          if ($exit -ne 0) { throw 'Could not apply the v0.12 native correction.' }
+          if (-not (Test-Path 'work/src-tauri/build.rs')) { throw 'Trace main Tauri build.rs is still missing.' }
+          if (-not (Test-Path 'work/setup-shell/src-tauri/build.rs')) { throw 'Trace setup-shell Tauri build.rs is still missing.' }
+
       - name: JavaScript, database and analysis contracts
         shell: pwsh
         working-directory: work
@@ -153,6 +177,7 @@ jobs:
             work/package-lock.json
             work/src/**
             work/database/**
+            work/src-tauri/build.rs
             work/src-tauri/Cargo.toml
             work/src-tauri/Cargo.lock
             work/src-tauri/tauri.conf.json
@@ -165,6 +190,7 @@ jobs:
             work/setup-shell/package-lock.json
             work/setup-shell/scripts/**
             work/setup-shell/src/**
+            work/setup-shell/src-tauri/build.rs
             work/setup-shell/src-tauri/Cargo.toml
             work/setup-shell/src-tauri/Cargo.lock
             work/setup-shell/src-tauri/tauri.conf.json
