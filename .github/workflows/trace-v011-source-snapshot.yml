@@ -7,15 +7,15 @@ on:
       - trace-ux-foundation
     paths:
       - '.github/workflows/trace-v011-source-snapshot.yml'
-      - 'ci/ux_foundation_gate.ps1'
-      - 'bootstrap/v011ux/**'
+      - 'ci/ux_foundation_gate_v2.ps1'
+      - 'bootstrap/v011ux2/**'
   pull_request:
     branches:
       - main
     paths:
       - '.github/workflows/trace-v011-source-snapshot.yml'
-      - 'ci/ux_foundation_gate.ps1'
-      - 'bootstrap/v011ux/**'
+      - 'ci/ux_foundation_gate_v2.ps1'
+      - 'bootstrap/v011ux2/**'
 
 permissions:
   contents: write
@@ -43,6 +43,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: trace-ux-foundation
+
+      - name: Checkout proven v0.11 checkpoint
+        uses: actions/checkout@v4
+        with:
+          ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
+          path: source
 
       - name: Publish UX run ID
         if: github.event_name != 'pull_request'
@@ -75,9 +81,9 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Reconstruct, verify, build, install and launch UX candidate
+      - name: Reconstruct, render, build, install and launch UX candidate
         shell: pwsh
-        run: ./ci/ux_foundation_gate.ps1
+        run: ./ci/ux_foundation_gate_v2.ps1
 
       - name: Upload UX Foundation Windows candidate
         if: success()
@@ -106,7 +112,7 @@ jobs:
           trigger_sha=${{ github.sha }}
           result=${{ job.status }}
           workflow=Trace UX Foundation Windows gate
-          verification=exact_v011_reconstruction+corrected_pdf+ux_overlay_hash+v011_regressions+ux_contract+first_launch_visual_smoke+rust_check+rust_tests+windows_bundle+installed_launch+native_uninstall+research_data_preservation
+          verification=exact_v011_reconstruction+corrected_pdf+rendered_ux_overlay_hash+v011_regressions+ux_contract+first_launch_visual_smoke+rust_check+rust_tests+windows_bundle+installed_launch+native_uninstall+research_data_preservation
           "@ | Set-Content build-status/ux-foundation.txt
           git add build-status/ux-foundation.txt
           if (git status --porcelain) {
