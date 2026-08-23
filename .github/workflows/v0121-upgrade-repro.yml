@@ -1,0 +1,182 @@
+name: Trace v0.12.1 upgrade reproduction
+
+on:
+  push:
+    branches:
+      - trace-v0121
+    paths:
+      - '.github/workflows/v0121-upgrade-repro.yml'
+      - 'release/v0121-repro-go.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-v0121-upgrade-repro
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Publish reproduction run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          result=running
+          workflow=Trace v0.12.1 upgrade reproduction
+          "@ | Set-Content build-status/v0121-upgrade-repro.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v0121-upgrade-repro.txt
+          git commit -m 'ci: record v0.12.1 upgrade repro run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download verified v0.11 and v0.12 releases
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/v011 | Out-Null
+          New-Item -ItemType Directory -Force -Path artifacts/v012 | Out-Null
+          gh run download 32582256355 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.11-Exact-Verified-Windows-Release' --dir artifacts/v011
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download verified v0.11 release.' }
+          gh run download 32639353769 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Exact-Verified-Windows-Release' --dir artifacts/v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download verified v0.12 release.' }
+          foreach ($p in @('artifacts/v011/release/TraceSetup.exe','artifacts/v012/release/TraceSetup.exe')) {
+            if (!(Test-Path $p)) { throw "Missing release installer: $p" }
+          }
+
+      - name: Scenario A - upgrade succeeds when Trace is closed
+        shell: pwsh
+        run: |
+          $old=(Resolve-Path 'artifacts/v011/release/TraceSetup.exe').Path
+          $new=(Resolve-Path 'artifacts/v012/release/TraceSetup.exe').Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceUpgradeClosed'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+
+          & $old --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "v0.11 install failed: $LASTEXITCODE" }
+          $exe=Join-Path $dir 'Trace.exe'
+          if (!(Test-Path $exe)) { throw 'v0.11 Trace.exe missing.' }
+          $before=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $sentinel=Join-Path $dir 'upgrade-research-sentinel.txt'
+          'research data must survive upgrade' | Set-Content $sentinel
+
+          & $new --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "v0.12 closed-app update failed: $LASTEXITCODE" }
+          if (!(Test-Path $exe)) { throw 'Trace.exe missing after closed-app update.' }
+          $after=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected=(Get-FileHash 'artifacts/v012/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($after -ne $expected) { throw 'Closed-app update did not install exact v0.12 Trace.exe.' }
+          if ($before -eq $after) { throw 'Closed-app update did not replace the old executable.' }
+          if (!(Test-Path $sentinel)) { throw 'Closed-app update removed sentinel data.' }
+          @"
+          scenario=closed
+          old_hash=$before
+          new_hash=$after
+          expected_hash=$expected
+          result=success
+          "@ | Set-Content closed-upgrade-result.txt
+
+      - name: Scenario B - capture behavior while Trace is running
+        shell: pwsh
+        run: |
+          $old=(Resolve-Path 'artifacts/v011/release/TraceSetup.exe').Path
+          $new=(Resolve-Path 'artifacts/v012/release/TraceSetup.exe').Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceUpgradeRunning'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+
+          & $old --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "v0.11 install failed: $LASTEXITCODE" }
+          $exe=Join-Path $dir 'Trace.exe'
+          $before=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $trace=Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+          Start-Sleep -Seconds 6
+          if ($trace.HasExited) { throw "v0.11 Trace exited before reproduction, code $($trace.ExitCode)." }
+
+          $stdout=Join-Path $env:RUNNER_TEMP 'running-update-stdout.txt'
+          $stderr=Join-Path $env:RUNNER_TEMP 'running-update-stderr.txt'
+          $p=Start-Process -FilePath $new -ArgumentList @('--silent-install','--install-dir',$dir) -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $exit=$p.ExitCode
+          $afterRunning=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $out=if(Test-Path $stdout){Get-Content $stdout -Raw}else{''}
+          $err=if(Test-Path $stderr){Get-Content $stderr -Raw}else{''}
+
+          @"
+          scenario=running
+          installer_exit=$exit
+          old_hash=$before
+          hash_after_attempt=$afterRunning
+          trace_still_running=$(!$trace.HasExited)
+          stdout=$out
+          stderr=$err
+          "@ | Set-Content running-upgrade-result.txt
+
+          if (!$trace.HasExited) { Stop-Process -Id $trace.Id -Force }
+          Start-Sleep -Seconds 2
+
+          & $new --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "v0.12 retry after closing Trace failed: $LASTEXITCODE" }
+          $afterClose=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected=(Get-FileHash 'artifacts/v012/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($afterClose -ne $expected) { throw 'Retry after closing Trace did not install exact v0.12 Trace.exe.' }
+          Add-Content running-upgrade-result.txt "retry_after_close=success"
+          Add-Content running-upgrade-result.txt "final_hash=$afterClose"
+
+      - name: Collect setup logs
+        if: always()
+        shell: pwsh
+        run: |
+          $log=Join-Path $env:LOCALAPPDATA 'Trace/Installer/TraceSetup.log'
+          if (Test-Path $log) { Copy-Item $log TraceSetup.log -Force }
+
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Upgrade-Reproduction
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            closed-upgrade-result.txt
+            running-upgrade-result.txt
+            TraceSetup.log
+
+      - name: Publish reproduction result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $status=@"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          result=${{ job.status }}
+          workflow=Trace v0.12.1 upgrade reproduction
+          evidence=closed_upgrade+running_upgrade+retry_after_close
+          "@
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git reset --hard HEAD
+          git pull --rebase origin trace-v0121
+          $status | Set-Content build-status/v0121-upgrade-repro.txt
+          git add build-status/v0121-upgrade-repro.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.12.1 upgrade repro result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
