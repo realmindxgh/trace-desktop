@@ -1,0 +1,4 @@
+Trace v0.12 exact Windows release verification
+source_gate_run=32638636953
+source_gate_result=success
+version=0.12.0
