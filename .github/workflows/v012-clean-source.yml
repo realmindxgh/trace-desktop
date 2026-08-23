@@ -1,0 +1,217 @@
+name: Trace v0.12 clean baseline source
+
+on:
+  push:
+    branches:
+      - trace-v012
+    paths:
+      - '.github/workflows/v012-clean-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trace-v012-clean-source
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - name: Checkout v0.12 control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v012
+          path: control
+
+      - name: Publish clean snapshot run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.12 clean baseline source
+          "@ | Set-Content build-status/v012-clean-source.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v012-clean-source.txt
+          git commit -m 'ci: record v0.12 clean snapshot run [skip ci]'
+          git pull --rebase origin trace-v012
+          git push origin HEAD:trace-v012
+
+      - name: Checkout proven transcription checkpoint control
+        uses: actions/checkout@v4
+        with:
+          ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
+          path: source
+
+      - name: Inject corrected transcription checkpoint bytes
+        shell: pwsh
+        run: |
+          Copy-Item control/bootstrap/v011transcribe/part00 source/bootstrap/v011transcribe/part00 -Force
+          Copy-Item control/bootstrap/v011transcribe/part01 source/bootstrap/v011transcribe/part01 -Force
+          $wf='source/.github/workflows/v011-transcription-check.yml'
+          $text=Get-Content $wf -Raw
+          $text=$text.Replace('17960','18928')
+          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
+          Set-Content $wf $text
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Reconstruct exact proven v0.11 app layers
+        shell: pwsh
+        working-directory: source
+        run: |
+          python -m pip install pyyaml
+          @'
+          import pathlib, subprocess, tempfile, yaml
+          root = pathlib.Path.cwd()
+          workflow = yaml.safe_load((root / '.github/workflows/v011-transcription-check.yml').read_text(encoding='utf-8'))
+          by_name = {s.get('name'): s for s in workflow['jobs']['check']['steps']}
+          wanted = [
+              'Reconstruct verified Trace base source',
+              'Apply verified v0.10 overlay',
+              'Apply verified v0.11 imports and display overlay',
+              'Apply verified v0.11 usability overlay',
+              'Apply verified v0.11 local transcription overlay',
+              'Prepare Windows assets',
+          ]
+          for name in wanted:
+              step = by_name[name]
+              cwd = root / step.get('working-directory', '.')
+              with tempfile.NamedTemporaryFile('w', suffix='.ps1', encoding='utf-8', delete=False) as handle:
+                  handle.write("$ErrorActionPreference = 'Stop'\n")
+                  handle.write(step['run'])
+                  script = handle.name
+              print(f'CLEAN BASELINE REPLAY: {name}', flush=True)
+              subprocess.run(['pwsh','-NoProfile','-File',script], cwd=cwd, check=True)
+          '@ | Set-Content replay_clean_baseline.py
+          python replay_clean_baseline.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not reconstruct proven v0.11 app layers.' }
+
+      - name: Apply exact PDF text overlay
+        shell: pwsh
+        working-directory: source
+        run: |
+          $b64=Get-Content ../control/bootstrap/v011pdf/part00 -Raw
+          if ($b64.Length -ne 8556) { throw "PDF overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128') { throw "PDF overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay application failed.' }
+
+      - name: Apply exact installer v2 overlays
+        shell: pwsh
+        working-directory: source
+        run: |
+          $parts=Get-ChildItem ../control/bootstrap/v011installer2/part* | Sort-Object Name
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($parts.Count -ne 4 -or $b64.Length -ne 20512) { throw 'Installer v2 overlay boundary mismatch.' }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          if ((Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant() -ne '572c0d31f73db60600a1e374e5f821812d2bd417853ce30832e718a061042307') { throw 'Installer v2 overlay SHA-256 mismatch.' }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          Push-Location work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer v2 overlay preflight failed.' }
+          git apply $patch
+          $exit=$LASTEXITCODE
+          Pop-Location
+          if ($exit -ne 0) { throw 'Installer v2 overlay application failed.' }
+
+          $b64=Get-Content ../control/bootstrap/v011installer2click/part00 -Raw
+          if ($b64.Length -ne 536) { throw 'Installer GUI click overlay boundary mismatch.' }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2-click.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          if ((Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant() -ne '3b3da6f386bd33876aab699b09d790b69508a708ce95260d3ec021d6db4d7021') { throw 'Installer GUI click overlay SHA-256 mismatch.' }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2-click.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          Push-Location work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer GUI click overlay preflight failed.' }
+          git apply $patch
+          $exit=$LASTEXITCODE
+          Pop-Location
+          if ($exit -ne 0) { throw 'Installer GUI click overlay application failed.' }
+
+      - name: Source-only sanity check
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace app syntax failed.' }
+          node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup syntax failed.' }
+          python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace schema contract failed.' }
+          foreach ($dir in @('src-tauri/target','setup-shell/src-tauri/target','node_modules','setup-shell/node_modules','dist','setup-shell/dist')) {
+            if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+          }
+
+      - name: Upload clean exact baseline source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12-Clean-Exact-Baseline-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            source/work/package.json
+            source/work/package-lock.json
+            source/work/src/**
+            source/work/database/**
+            source/work/src-tauri/Cargo.toml
+            source/work/src-tauri/Cargo.lock
+            source/work/src-tauri/tauri.conf.json
+            source/work/src-tauri/src/**
+            source/work/src-tauri/icons/**
+            source/work/src-tauri/windows/**
+            source/work/setup-shell/package.json
+            source/work/setup-shell/package-lock.json
+            source/work/setup-shell/scripts/**
+            source/work/setup-shell/src/**
+            source/work/setup-shell/src-tauri/Cargo.toml
+            source/work/setup-shell/src-tauri/Cargo.lock
+            source/work/setup-shell/src-tauri/tauri.conf.json
+            source/work/setup-shell/src-tauri/src/**
+            source/work/setup-shell/src-tauri/icons/**
+            source/work/tests/**
+            source/work/scripts/**
+
+      - name: Publish clean snapshot result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin trace-v012
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace v0.12 clean baseline source
+          "@ | Set-Content build-status/v012-clean-source.txt
+          git add build-status/v012-clean-source.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.12 clean snapshot result [skip ci]'
+            git push origin HEAD:trace-v012
+          }
