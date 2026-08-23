@@ -1,0 +1,7 @@
+run_id=32651178336
+run_number=1
+trigger_sha=69fd23c120f90106ac6b2b493327ca221c94a8f7
+source_gate_run=32649590459
+version=0.12.1
+result=running
+workflow=Trace Windows v0.12.1 exact installer and upgrade verification
