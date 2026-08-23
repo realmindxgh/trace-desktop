@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHONUTF8: '1'
-      CARGO_TARGET_DIR: ${{ runner.temp }}\trace-v012-target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-v012-target
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout v0.12 control
