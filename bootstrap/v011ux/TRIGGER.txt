@@ -1,0 +1,3 @@
+Trace UX Foundation Windows gate trigger
+candidate=6d75248b1ce339eb3652e6c460e7a096e0504bb0
+ux_patch_sha256=a6223601b26716813b9a4828e3e77b2bbac1496d7b9540e21761231b5909cc2a

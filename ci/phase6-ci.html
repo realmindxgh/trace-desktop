@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trace Phase 6 CI</title><link rel="stylesheet" href="src/styles.css"></head><body><div id="app"></div><script src="src/app.js"></script><script>
+state.homeMode=false;
+state.project={...state.project,id:'p6',title:'National Teacher Interviews',description:'A multi-site qualitative study of teachers adapting to inclusive education.',methodology:'Reflexive Thematic Analysis',aiScope:'none',researchQuestions:['How do teachers experience implementation?','What conditions support adaptation?'],researchQuestionRecords:[{id:'rq1',position:0,text:'How do teachers experience implementation?'},{id:'rq2',position:1,text:'What conditions support adaptation?'}]};
+state.participants=Array.from({length:180},(_,i)=>({id:'P'+String(i+1).padStart(3,'0'),internalId:'p'+i,role:'Teacher'}));
+state.importedSources=Array.from({length:250},(_,i)=>({id:'s'+i,name:'Interview '+String(i+1).padStart(3,'0')+'.txt',kind:'text',participantId:i<180?'p'+i:null,text:'Interview evidence about workload, support and adaptation.',codings:[]}));
+state.sourceProperties=[];state.sourceCollections=[];state.sourceRenderLimit=100;state.participantRenderLimit=100;state.activeSection='Data';state.activeSourceId=null;state.backups=[];state.aiSuggestions=[];render();
+const view=new URLSearchParams(location.search).get('view')||'data';
+if(view==='project-settings')openProjectSettings();
+if(view==='ai')openTraceAssistantStatus();
+if(view==='confirm')confirmResearchAction({title:'Delete source "Interview 001.txt"?',body:'Deleting a source removes the research material from this Trace project.',consequences:['12 coding references attached to this source will be removed.','3 evidence selections attached to this source will be removed.','The participant record itself will remain.'],confirmLabel:'Delete source'});
+if(view==='recovery'){recoveryNotice={heartbeatAt:Date.now()-45000};openRecoveryDetails();}
+if(view==='recovery-center')openRecoveryCenter();
+setTimeout(()=>{const x=document.createElement('div');x.id='phase6-ci-status';x.hidden=true;x.textContent='ready;overflow='+String(document.documentElement.scrollWidth>document.documentElement.clientWidth)+';sources='+document.querySelectorAll('.source-table-row').length+';participants='+document.querySelectorAll('.participant-browser-row').length+';ariaCurrent='+String(document.querySelector('[aria-current="page"]')!==null)+';skip='+String(document.querySelector('.skip-link')!==null);document.body.appendChild(x)},80);
+</script></body></html>
