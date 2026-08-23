@@ -1,5 +1,5 @@
 run_id=32634818016
 run_number=3
 source_sha=ef4d46946f60aa63305b2ce982402e5c740fbb5d
-result=running
+result=success
 workflow=Trace v0.12 exact baseline snapshot
