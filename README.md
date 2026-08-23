@@ -7,3 +7,5 @@ Cross-platform qualitative research workspace. Windows is the first shipping tar
 The immediate target is **Trace v0.12.1: UX and Installer Hardening**.
 
 Before changing application code, installer code, CI, or release behavior, read [`AGENTS.md`](AGENTS.md). It contains the current execution plan, priorities, acceptance criteria, testing matrix, release rules, and handoff requirements for coding agents and contributors.
+
+Also review the [`v0.12.1 visual direction guide`](docs/visuals/README.md) alongside `AGENTS.md`. It shows the intended typography, Code and Data workspace hierarchy, inspector behavior, installer maintenance flow, accessibility direction, and upgrade-verification concept.
