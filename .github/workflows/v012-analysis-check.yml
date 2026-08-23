@@ -54,9 +54,11 @@ jobs:
       - name: Download exact green v0.11 baseline source
         shell: pwsh
         run: |
-          gh run download 32635242879 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Clean-Exact-Baseline-Source' --dir work
-          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the exact green baseline source.' }
+          gh run download 32635701348 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Clean-Exact-Baseline-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the corrected exact green baseline source.' }
+          if (-not (Test-Path 'work/index.html')) { throw 'Corrected baseline is missing root index.html.' }
           if (-not (Test-Path 'work/src/app.js')) { throw 'Baseline source artifact is incomplete.' }
+          if (-not (Test-Path 'work/setup-shell/index.html')) { throw 'Corrected baseline is missing setup-shell index.html.' }
           if ((Get-Content 'work/package.json' -Raw) -notmatch '"version"\s*:\s*"0\.11\.0"') { throw 'Baseline is not Trace 0.11.0.' }
 
       - name: Set up Python
@@ -91,7 +93,7 @@ jobs:
           git init | Out-Null
           git config core.whitespace cr-at-eol
           git apply --check $patch
-          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'v0.12 overlay does not apply cleanly to the exact baseline.' }
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'v0.12 overlay does not apply cleanly to the corrected exact baseline.' }
           git apply $patch
           $exit=$LASTEXITCODE
           Pop-Location
@@ -138,25 +140,36 @@ jobs:
           cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 setup-shell Rust compile check failed.' }
 
-      - name: Upload proven v0.12 source checkpoint
+      - name: Upload proven complete v0.12 source checkpoint
         uses: actions/upload-artifact@v4
         with:
           name: Trace-v0.12-Analysis-Green-Source
           retention-days: 14
           if-no-files-found: error
           path: |
+            work/index.html
+            work/assets/**
             work/package.json
+            work/package-lock.json
             work/src/**
             work/database/**
             work/src-tauri/Cargo.toml
+            work/src-tauri/Cargo.lock
             work/src-tauri/tauri.conf.json
             work/src-tauri/src/**
+            work/src-tauri/icons/**
+            work/src-tauri/windows/**
+            work/setup-shell/index.html
+            work/setup-shell/assets/**
             work/setup-shell/package.json
+            work/setup-shell/package-lock.json
             work/setup-shell/scripts/**
             work/setup-shell/src/**
             work/setup-shell/src-tauri/Cargo.toml
+            work/setup-shell/src-tauri/Cargo.lock
             work/setup-shell/src-tauri/tauri.conf.json
             work/setup-shell/src-tauri/src/**
+            work/setup-shell/src-tauri/icons/**
             work/tests/**
             work/scripts/**
 
