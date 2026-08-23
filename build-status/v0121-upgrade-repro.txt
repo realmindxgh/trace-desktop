@@ -1,5 +1,4 @@
-run_id=32646437954
-run_number=1
-result=cancelled
+run_id=32646460380
+run_number=2
+result=running
 workflow=Trace v0.12.1 upgrade reproduction
-evidence=closed_upgrade+running_upgrade+retry_after_close
