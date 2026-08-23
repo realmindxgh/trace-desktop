@@ -1,0 +1,40 @@
+name: Fix Trace v0.12 setup-shell compile gate
+
+on:
+  push:
+    branches:
+      - trace-v012
+    paths:
+      - '.github/workflows/v012-fix-setup-gate.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.12
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v012
+
+      - name: Stage compile-only payload around setup-shell cargo check
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/v012-analysis-check.yml')
+          text=path.read_text(encoding='utf-8')
+          old="""          cargo check --manifest-path setup-shell/src-tauri/Cargo.toml\n          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 setup-shell Rust compile check failed.' }\n"""
+          new="""          # The branded setup embeds the real NSIS payload only in the final release workflow.\n          # For this source compile gate, provide a temporary MZ placeholder solely so include_bytes! can compile.\n          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null\n          [IO.File]::WriteAllBytes('setup-shell/src-tauri/payload/trace-payload.exe',[byte[]](0x4D,0x5A))\n          cargo check --manifest-path setup-shell/src-tauri/Cargo.toml\n          $setupCheck=$LASTEXITCODE\n          Remove-Item setup-shell/src-tauri/payload/trace-payload.exe -Force\n          if ($setupCheck -ne 0) { throw 'Trace v0.12 setup-shell Rust compile check failed.' }\n"""
+          if old not in text:
+              raise SystemExit('Could not find the setup-shell cargo-check block to patch.')
+          path.write_text(text.replace(old,new,1),encoding='utf-8')
+          PY
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/v012-analysis-check.yml
+          git commit -m 'ci: stage temporary setup payload during v0.12 source gate [skip ci]'
+          git pull --rebase origin trace-v012
+          git push origin HEAD:trace-v012
