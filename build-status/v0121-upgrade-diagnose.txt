@@ -1,4 +1,4 @@
 run_id=32646632621
 run_number=1
-result=running
+result=cancelled
 workflow=Trace v0.12.1 upgrade diagnosis
