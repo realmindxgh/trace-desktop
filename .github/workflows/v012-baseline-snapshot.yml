@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   snapshot:
@@ -19,6 +19,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Publish snapshot run ID
+        shell: bash
+        run: |
+          mkdir -p build-status
+          cat > build-status/v012-baseline-snapshot.txt <<EOF
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.12 exact baseline snapshot
+          EOF
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v012-baseline-snapshot.txt
+          git commit -m 'ci: record v0.12 baseline snapshot run [skip ci]'
+          git pull --rebase origin trace-v012
+          git push origin HEAD:trace-v012
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -63,14 +81,16 @@ jobs:
               with tempfile.NamedTemporaryFile(suffix='.patch', delete=False) as handle:
                   handle.write(patch)
                   patch_path = handle.name
-              command = ['git', 'apply', '--check', '--directory=work']
+              check = ['git', 'apply', '--check', '--directory=work']
               for item in excludes:
-                  command.append(f'--exclude={item}')
-              command.append(patch_path)
-              subprocess.run(command, check=True)
-              command[2] = '--directory=work'
-              command.remove('--check')
-              subprocess.run(command, check=True)
+                  check.append(f'--exclude={item}')
+              check.append(patch_path)
+              subprocess.run(check, check=True)
+              apply = ['git', 'apply', '--directory=work']
+              for item in excludes:
+                  apply.append(f'--exclude={item}')
+              apply.append(patch_path)
+              subprocess.run(apply, check=True)
               pathlib.Path(patch_path).unlink(missing_ok=True)
               print(f'Applied {label}')
 
@@ -124,3 +144,23 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: work/**
+
+      - name: Publish snapshot result
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          rm -rf work
+          git pull --rebase origin trace-v012
+          cat > build-status/v012-baseline-snapshot.txt <<EOF
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace v0.12 exact baseline snapshot
+          EOF
+          git add build-status/v012-baseline-snapshot.txt
+          if ! git diff --cached --quiet; then
+            git commit -m 'ci: record v0.12 baseline snapshot result [skip ci]'
+            git push origin HEAD:trace-v012
+          fi
