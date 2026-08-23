@@ -40,7 +40,7 @@ jobs:
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           trigger_sha=${{ github.sha }}
-          source_gate_run=32635967904
+          source_gate_run=32638636953
           version=0.12.0
           result=running
           workflow=Trace Windows v0.12 exact installer verification
@@ -59,9 +59,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path source/work | Out-Null
-          gh run download 32635967904 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Analysis-Green-Source' --dir source/work
+          gh run download 32638636953 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Analysis-Green-Source' --dir source/work
           if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the Windows-green v0.12 source checkpoint.' }
-          foreach ($required in @('source/work/index.html','source/work/src/app.js','source/work/src-tauri/Cargo.toml','source/work/setup-shell/index.html','source/work/setup-shell/src-tauri/Cargo.toml')) {
+          foreach ($required in @('source/work/index.html','source/work/src/app.js','source/work/src-tauri/build.rs','source/work/src-tauri/Cargo.toml','source/work/setup-shell/index.html','source/work/setup-shell/src-tauri/build.rs','source/work/setup-shell/src-tauri/Cargo.toml')) {
             if (!(Test-Path $required)) { throw "Green source checkpoint is incomplete: $required" }
           }
           if ((Get-Content source/work/package.json -Raw) -notmatch '"version"\s*:\s*"0\.12\.0"') { throw 'Root package is not Trace 0.12.0.' }
@@ -223,7 +223,7 @@ jobs:
           Trace 0.12.0 exact Windows verification
           trigger_sha=${{ github.sha }}
           run_id=${{ github.run_id }}
-          source_gate_run=32635967904
+          source_gate_run=32638636953
           TraceSetup_sha256=$setupHash
           exact_branded_install=true
           embedded_payload_matches_generated_nsis=true
@@ -271,7 +271,7 @@ jobs:
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           trigger_sha=${{ github.sha }}
-          source_gate_run=32635967904
+          source_gate_run=32638636953
           version=0.12.0
           result=${{ job.status }}
           workflow=Trace Windows v0.12 exact installer verification
