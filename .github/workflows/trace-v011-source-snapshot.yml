@@ -7,23 +7,29 @@ on:
       - trace-ux-foundation
     paths:
       - '.github/workflows/trace-v011-source-snapshot.yml'
-      - 'ci/ux_foundation_gate_v4.ps1'
+      - 'ci/ux_foundation_gate_v5.ps1'
       - 'ci/phase3_browser_gate.ps1'
       - 'ci/phase3-ci.html'
+      - 'ci/phase4_browser_gate.ps1'
+      - 'ci/phase4-ci.html'
       - 'bootstrap/v011ux2/**'
       - 'bootstrap/v011ux3/**'
       - 'bootstrap/v011ux4/**'
+      - 'bootstrap/v011ux5/**'
   pull_request:
     branches:
       - main
     paths:
       - '.github/workflows/trace-v011-source-snapshot.yml'
-      - 'ci/ux_foundation_gate_v4.ps1'
+      - 'ci/ux_foundation_gate_v5.ps1'
       - 'ci/phase3_browser_gate.ps1'
       - 'ci/phase3-ci.html'
+      - 'ci/phase4_browser_gate.ps1'
+      - 'ci/phase4-ci.html'
       - 'bootstrap/v011ux2/**'
       - 'bootstrap/v011ux3/**'
       - 'bootstrap/v011ux4/**'
+      - 'bootstrap/v011ux5/**'
 
 permissions:
   contents: write
@@ -91,7 +97,7 @@ jobs:
 
       - name: Reconstruct, render, build, install and launch UX candidate
         shell: pwsh
-        run: ./ci/ux_foundation_gate_v4.ps1
+        run: ./ci/ux_foundation_gate_v5.ps1
 
       - name: Upload UX Foundation Windows candidate
         if: success()
@@ -120,7 +126,7 @@ jobs:
           trigger_sha=${{ github.sha }}
           result=${{ job.status }}
           workflow=Trace UX Foundation Windows gate
-          verification=exact_v011_reconstruction+corrected_pdf+ux_phase1_hash+ux_phase2_hash+ux_phase3_hash+v011_regressions+ux_contract+phase3_logic+first_launch_visual_smoke+phase3_edge_visual+rust_check+rust_tests+windows_bundle+installed_launch+native_uninstall+research_data_preservation
+          verification=exact_v011_reconstruction+corrected_pdf+ux_phase1_hash+ux_phase2_hash+ux_phase3_hash+ux_phase4_hash+v011_regressions+ux_contract_82+phase3_logic+phase4_logic+first_launch_visual_smoke+phase3_edge_visual+phase4_edge_visual+rust_check+rust_tests+windows_bundle+installed_launch+native_uninstall+research_data_preservation
           "@ | Set-Content build-status/ux-foundation.txt
           git add build-status/ux-foundation.txt
           if (git status --porcelain) {
