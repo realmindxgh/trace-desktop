@@ -6,161 +6,228 @@ on:
       - trace-v012
     paths:
       - '.github/workflows/v012-baseline-snapshot.yml'
-      - 'bootstrap/**'
+      - 'bootstrap/v011transcribe/**'
+      - 'bootstrap/v011pdf/**'
+      - 'bootstrap/v011installer2/**'
+      - 'bootstrap/v011installer2click/**'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: trace-v012-baseline-snapshot
+  cancel-in-progress: true
+
 jobs:
   snapshot:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: '1'
     steps:
-      - name: Checkout
+      - name: Checkout v0.12 control
         uses: actions/checkout@v4
+        with:
+          ref: trace-v012
+          path: control
 
       - name: Publish snapshot run ID
-        shell: bash
+        shell: pwsh
+        working-directory: control
         run: |
-          mkdir -p build-status
-          cat > build-status/v012-baseline-snapshot.txt <<EOF
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           source_sha=${{ github.sha }}
           result=running
           workflow=Trace v0.12 exact baseline snapshot
-          EOF
+          "@ | Set-Content build-status/v012-baseline-snapshot.txt
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
           git add build-status/v012-baseline-snapshot.txt
           git commit -m 'ci: record v0.12 baseline snapshot run [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not commit v0.12 snapshot run ID.' }
           git pull --rebase origin trace-v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not rebase v0.12 snapshot run ID.' }
           git push origin HEAD:trace-v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish v0.12 snapshot run ID.' }
+
+      - name: Checkout proven transcription checkpoint control
+        uses: actions/checkout@v4
+        with:
+          ref: eebc47e418003811a0cb27e1b684601a5c77bdcf
+          path: source
+
+      - name: Inject corrected transcription checkpoint bytes
+        shell: pwsh
+        run: |
+          Copy-Item control/bootstrap/v011transcribe/part00 source/bootstrap/v011transcribe/part00 -Force
+          Copy-Item control/bootstrap/v011transcribe/part01 source/bootstrap/v011transcribe/part01 -Force
+          $wf='source/.github/workflows/v011-transcription-check.yml'
+          $text=Get-Content $wf -Raw
+          $text=$text.Replace('17960','18928')
+          $text=$text.Replace('8ae71006df954e47040b79fda535b6212bc2949ce4efa7613ab90bbd0204515a','7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
+          Set-Content $wf $text
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Reconstruct exact shipped v0.11 baseline
-        shell: bash
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct exact proven v0.11 app source layers
+        shell: pwsh
+        working-directory: source
         run: |
-          python - <<'PY'
-          import base64, hashlib, io, lzma, pathlib, shutil, subprocess, tarfile, tempfile
-
+          python -m pip install pyyaml
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install PyYAML.' }
+          @'
+          import pathlib, subprocess, tempfile, yaml
           root = pathlib.Path.cwd()
-          work = root / 'work'
-          if work.exists():
-              shutil.rmtree(work)
-          work.mkdir()
-
-          def joined(pattern, expected_count, expected_len):
-              parts = sorted(root.glob(pattern))
-              if len(parts) != expected_count:
-                  raise SystemExit(f'{pattern}: expected {expected_count} parts, found {len(parts)}')
-              text = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
-              if len(text) != expected_len:
-                  raise SystemExit(f'{pattern}: expected base64 length {expected_len}, found {len(text)}')
-              return text
-
-          def decoded(pattern, expected_count, expected_len, expected_sha):
-              raw = base64.b64decode(joined(pattern, expected_count, expected_len))
-              digest = hashlib.sha256(raw).hexdigest()
-              if digest != expected_sha:
-                  raise SystemExit(f'{pattern}: SHA-256 mismatch {digest}')
-              return raw
-
-          base = decoded('bootstrap/v2/part*', 8, 101964, '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074')
-          with tarfile.open(fileobj=io.BytesIO(base), mode='r:xz') as archive:
-              archive.extractall(work)
-
-          def apply_overlay(label, pattern, count, b64_len, compressed_sha, excludes=()):
-              compressed = decoded(pattern, count, b64_len, compressed_sha)
-              patch = lzma.decompress(compressed)
-              with tempfile.NamedTemporaryFile(suffix='.patch', delete=False) as handle:
-                  handle.write(patch)
-                  patch_path = handle.name
-              check = ['git', 'apply', '--check', '--directory=work']
-              for item in excludes:
-                  check.append(f'--exclude={item}')
-              check.append(patch_path)
-              subprocess.run(check, check=True)
-              apply = ['git', 'apply', '--directory=work']
-              for item in excludes:
-                  apply.append(f'--exclude={item}')
-              apply.append(patch_path)
-              subprocess.run(apply, check=True)
-              pathlib.Path(patch_path).unlink(missing_ok=True)
-              print(f'Applied {label}')
-
-          apply_overlay(
-              'v0.10', 'bootstrap/v010/part*', 4, 43260,
-              'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da',
-              ('tests/v07_installer.py', 'tests/v08_release.py', 'tests/v09_release.py')
-          )
-          (work / 'tests').mkdir(exist_ok=True)
-          for name in ('schema_contract.py', 'v07_installer.py', 'v08_release.py', 'v09_release.py'):
-              shutil.copy2(root / 'bootstrap/v010/tests' / name, work / 'tests' / name)
-
-          apply_overlay('v0.11 imports/display', 'bootstrap/v011/part*', 2, 15296, '6cd4bdd47a095341ba6151d6addb73f47a005ad57110d3ade443449f9e9f40f2')
-          apply_overlay('v0.11 usability', 'bootstrap/v011plus/part*', 2, 13960, '60dccf75689c9f46a8e76ecee0356ecaf2e69713c6e624bbacaaa6e7b358ef5a')
-          apply_overlay('v0.11 transcription corrected', 'bootstrap/v011transcribe/part*', 2, 18928, '7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
-          apply_overlay('v0.11 PDF text', 'bootstrap/v011pdf/part*', 1, 8556, '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128')
-          apply_overlay('v0.11 installer v2', 'bootstrap/v011installer2/part*', 4, 20512, '572c0d31f73db60600a1e374e5f821812d2bd417853ce30832e718a061042307')
-          apply_overlay('v0.11 installer v2 GUI click', 'bootstrap/v011installer2click/part*', 1, 536, '3b3da6f386bd33876aab699b09d790b69508a708ce95260d3ec021d6db4d7021')
-
-          required = [
-              work / 'package.json',
-              work / 'src/app.js',
-              work / 'src/styles.css',
-              work / 'src-tauri/src/transcription.rs',
-              work / 'setup-shell/src/app.js',
-              work / 'setup-shell/src/styles.css',
+          workflow = yaml.safe_load((root / '.github/workflows/v011-transcription-check.yml').read_text(encoding='utf-8'))
+          steps = workflow['jobs']['check']['steps']
+          wanted = [
+              'Reconstruct verified Trace base source',
+              'Apply verified v0.10 overlay',
+              'Apply verified v0.11 imports and display overlay',
+              'Apply verified v0.11 usability overlay',
+              'Apply verified v0.11 local transcription overlay',
+              'Prepare Windows assets',
           ]
-          missing = [str(path) for path in required if not path.exists()]
-          if missing:
-              raise SystemExit('Missing reconstructed files: ' + ', '.join(missing))
+          by_name = {step.get('name'): step for step in steps}
+          for name in wanted:
+              step = by_name[name]
+              cwd = root / step.get('working-directory', '.')
+              with tempfile.NamedTemporaryFile('w', suffix='.ps1', encoding='utf-8', delete=False) as handle:
+                  handle.write("$ErrorActionPreference = 'Stop'\n")
+                  handle.write(step['run'])
+                  script = handle.name
+              print(f'V0.12 BASELINE REPLAY STEP: {name}', flush=True)
+              subprocess.run(['pwsh','-NoProfile','-File',script], cwd=cwd, check=True)
+          '@ | Set-Content replay_v012_baseline.py
+          python replay_v012_baseline.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not reconstruct proven v0.11 app layers.' }
 
-          print('Exact Trace v0.11 shipped baseline reconstructed for v0.12 development.')
-          PY
+      - name: Apply exact Windows-green PDF text overlay
+        shell: pwsh
+        working-directory: source
+        run: |
+          $parts=Get-ChildItem ../control/bootstrap/v011pdf/part* | Sort-Object Name
+          if ($parts.Count -ne 1) { throw "Incomplete PDF overlay. Expected 1 part, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 8556) { throw "PDF overlay base64 length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128') { throw "PDF overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011pdf.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne '8d1ae4be2c70243f36a815a020ff056701944d5ac2e0fe088403fa5d2b94fbb0') { throw "PDF patch SHA-256 mismatch: $patchHash" }
+          git apply --check --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay preflight failed.' }
+          git apply --directory=work $patch
+          if ($LASTEXITCODE -ne 0) { throw 'PDF overlay application failed.' }
 
-      - name: Baseline syntax and contracts
-        shell: bash
-        working-directory: work
+      - name: Apply exact installer v2 overlay
+        shell: pwsh
+        working-directory: source
+        run: |
+          $parts=Get-ChildItem ../control/bootstrap/v011installer2/part* | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Incomplete installer v2 overlay. Expected 4 parts, found $($parts.Count)." }
+          $b64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($b64.Length -ne 20512) { throw "Installer v2 overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '572c0d31f73db60600a1e374e5f821812d2bd417853ce30832e718a061042307') { throw "Installer v2 overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          Push-Location work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer v2 overlay preflight failed.' }
+          git apply $patch
+          $exit=$LASTEXITCODE
+          Pop-Location
+          if ($exit -ne 0) { throw 'Installer v2 overlay application failed.' }
+
+      - name: Apply exact installer v2 GUI click overlay
+        shell: pwsh
+        working-directory: source
+        run: |
+          $b64=Get-Content ../control/bootstrap/v011installer2click/part00 -Raw
+          if ($b64.Length -ne 536) { throw "GUI click overlay length mismatch: $($b64.Length)" }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2-click.patch.xz'
+          [IO.File]::WriteAllBytes($compressed,[Convert]::FromBase64String($b64))
+          $hash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '3b3da6f386bd33876aab699b09d790b69508a708ce95260d3ec021d6db4d7021') { throw "GUI click overlay SHA-256 mismatch: $hash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v011-installer-v2-click.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          Push-Location work
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'GUI click overlay preflight failed.' }
+          git apply $patch
+          $exit=$LASTEXITCODE
+          Pop-Location
+          if ($exit -ne 0) { throw 'GUI click overlay application failed.' }
+
+      - name: Baseline syntax and research contracts
+        shell: pwsh
+        working-directory: source/work
         run: |
           node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace app JavaScript syntax failed.' }
           node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup JavaScript syntax failed.' }
           python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Schema contract failed.' }
           python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 import/display contract failed.' }
           python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 usability contract failed.' }
           python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 transcription contract failed.' }
           python tests/v11_pdf_text.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.11 PDF text contract failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace Rust tests failed.' }
 
-      - name: Upload exact baseline source
+      - name: Upload exact v0.12 baseline source
         uses: actions/upload-artifact@v4
         with:
           name: Trace-v0.12-Exact-Baseline-Source
           retention-days: 14
           if-no-files-found: error
-          path: work/**
+          path: source/work/**
 
       - name: Publish snapshot result
         if: always()
-        shell: bash
+        shell: pwsh
+        working-directory: control
         run: |
           git reset --hard HEAD
-          rm -rf work
+          git clean -fd
           git pull --rebase origin trace-v012
-          cat > build-status/v012-baseline-snapshot.txt <<EOF
+          @"
           run_id=${{ github.run_id }}
           run_number=${{ github.run_number }}
           source_sha=${{ github.sha }}
           result=${{ job.status }}
           workflow=Trace v0.12 exact baseline snapshot
-          EOF
+          "@ | Set-Content build-status/v012-baseline-snapshot.txt
           git add build-status/v012-baseline-snapshot.txt
-          if ! git diff --cached --quiet; then
+          if (git status --porcelain) {
             git commit -m 'ci: record v0.12 baseline snapshot result [skip ci]'
             git push origin HEAD:trace-v012
-          fi
+          }
