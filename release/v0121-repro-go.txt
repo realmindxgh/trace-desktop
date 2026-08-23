@@ -1,3 +1,4 @@
 previous_release_run=32582256355
 current_release_run=32639353769
 purpose=reproduce_upgrade_with_trace_closed_and_running
+trigger=2
