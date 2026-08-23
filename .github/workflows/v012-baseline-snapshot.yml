@@ -1,0 +1,126 @@
+name: Trace v0.12 exact baseline snapshot
+
+on:
+  push:
+    branches:
+      - trace-v012
+    paths:
+      - '.github/workflows/v012-baseline-snapshot.yml'
+      - 'bootstrap/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Reconstruct exact shipped v0.11 baseline
+        shell: bash
+        run: |
+          python - <<'PY'
+          import base64, hashlib, io, lzma, pathlib, shutil, subprocess, tarfile, tempfile
+
+          root = pathlib.Path.cwd()
+          work = root / 'work'
+          if work.exists():
+              shutil.rmtree(work)
+          work.mkdir()
+
+          def joined(pattern, expected_count, expected_len):
+              parts = sorted(root.glob(pattern))
+              if len(parts) != expected_count:
+                  raise SystemExit(f'{pattern}: expected {expected_count} parts, found {len(parts)}')
+              text = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+              if len(text) != expected_len:
+                  raise SystemExit(f'{pattern}: expected base64 length {expected_len}, found {len(text)}')
+              return text
+
+          def decoded(pattern, expected_count, expected_len, expected_sha):
+              raw = base64.b64decode(joined(pattern, expected_count, expected_len))
+              digest = hashlib.sha256(raw).hexdigest()
+              if digest != expected_sha:
+                  raise SystemExit(f'{pattern}: SHA-256 mismatch {digest}')
+              return raw
+
+          base = decoded('bootstrap/v2/part*', 8, 101964, '6a444acb5b8a25a673c39ccc02374998628c36d6ad4af7e82b32564ab965c074')
+          with tarfile.open(fileobj=io.BytesIO(base), mode='r:xz') as archive:
+              archive.extractall(work)
+
+          def apply_overlay(label, pattern, count, b64_len, compressed_sha, excludes=()):
+              compressed = decoded(pattern, count, b64_len, compressed_sha)
+              patch = lzma.decompress(compressed)
+              with tempfile.NamedTemporaryFile(suffix='.patch', delete=False) as handle:
+                  handle.write(patch)
+                  patch_path = handle.name
+              command = ['git', 'apply', '--check', '--directory=work']
+              for item in excludes:
+                  command.append(f'--exclude={item}')
+              command.append(patch_path)
+              subprocess.run(command, check=True)
+              command[2] = '--directory=work'
+              command.remove('--check')
+              subprocess.run(command, check=True)
+              pathlib.Path(patch_path).unlink(missing_ok=True)
+              print(f'Applied {label}')
+
+          apply_overlay(
+              'v0.10', 'bootstrap/v010/part*', 4, 43260,
+              'fb595dd3bbf9d23b10d4aaacd8a907119eb495448418d88bb33eb52c045633da',
+              ('tests/v07_installer.py', 'tests/v08_release.py', 'tests/v09_release.py')
+          )
+          (work / 'tests').mkdir(exist_ok=True)
+          for name in ('schema_contract.py', 'v07_installer.py', 'v08_release.py', 'v09_release.py'):
+              shutil.copy2(root / 'bootstrap/v010/tests' / name, work / 'tests' / name)
+
+          apply_overlay('v0.11 imports/display', 'bootstrap/v011/part*', 2, 15296, '6cd4bdd47a095341ba6151d6addb73f47a005ad57110d3ade443449f9e9f40f2')
+          apply_overlay('v0.11 usability', 'bootstrap/v011plus/part*', 2, 13960, '60dccf75689c9f46a8e76ecee0356ecaf2e69713c6e624bbacaaa6e7b358ef5a')
+          apply_overlay('v0.11 transcription corrected', 'bootstrap/v011transcribe/part*', 2, 18928, '7e8ea74aec6da10154ae9dc7cabe4b252c20ba1432da0ad096496876c02d9b3e')
+          apply_overlay('v0.11 PDF text', 'bootstrap/v011pdf/part*', 1, 8556, '6e50b81fac3c4822f3ec6e452e5e8bbfd7f0a8628b0f99d7dbb7502c3ccf2128')
+          apply_overlay('v0.11 installer v2', 'bootstrap/v011installer2/part*', 4, 20512, '572c0d31f73db60600a1e374e5f821812d2bd417853ce30832e718a061042307')
+          apply_overlay('v0.11 installer v2 GUI click', 'bootstrap/v011installer2click/part*', 1, 536, '3b3da6f386bd33876aab699b09d790b69508a708ce95260d3ec021d6db4d7021')
+
+          required = [
+              work / 'package.json',
+              work / 'src/app.js',
+              work / 'src/styles.css',
+              work / 'src-tauri/src/transcription.rs',
+              work / 'setup-shell/src/app.js',
+              work / 'setup-shell/src/styles.css',
+          ]
+          missing = [str(path) for path in required if not path.exists()]
+          if missing:
+              raise SystemExit('Missing reconstructed files: ' + ', '.join(missing))
+
+          print('Exact Trace v0.11 shipped baseline reconstructed for v0.12 development.')
+          PY
+
+      - name: Baseline syntax and contracts
+        shell: bash
+        working-directory: work
+        run: |
+          node --check src/app.js
+          node --check setup-shell/src/app.js
+          python tests/schema_contract.py
+          python tests/v11_imports_display.py
+          python tests/v11_usability.py
+          python tests/v11_transcription.py
+          python tests/v11_pdf_text.py
+
+      - name: Upload exact baseline source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12-Exact-Baseline-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: work/**
