@@ -1,0 +1,218 @@
+name: Trace v0.12.1 UX and installer hardening gate
+
+on:
+  push:
+    branches:
+      - trace-v0121
+    paths:
+      - '.github/workflows/v0121-hardening-gate.yml'
+      - 'bootstrap/v0121full/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-v0121-hardening-gate
+  cancel-in-progress: true
+
+jobs:
+  hardening-gate:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      PYTHONUTF8: '1'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-v0121-target
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout v0.12.1 control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Publish gate run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=running
+          workflow=Trace v0.12.1 UX and installer hardening gate
+          "@ | Set-Content build-status/v0121-hardening-gate.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v0121-hardening-gate.txt
+          git commit -m 'ci: record v0.12.1 hardening gate run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download exact green v0.12 source checkpoint
+        shell: pwsh
+        run: |
+          gh run download 32638636953 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Analysis-Green-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the exact green v0.12 source checkpoint.' }
+          foreach ($p in @('work/index.html','work/src/app.js','work/src/styles.css','work/src-tauri/build.rs','work/setup-shell/src/app.js','work/setup-shell/src-tauri/build.rs')) {
+            if (-not (Test-Path $p)) { throw "Green v0.12 source artifact is incomplete: $p" }
+          }
+          if ((Get-Content 'work/package.json' -Raw) -notmatch '"version"\s*:\s*"0\.12\.0"') { throw 'Baseline source is not Trace 0.12.0.' }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct and verify exact v0.12.1 hardening overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem 'control/bootstrap/v0121full/patch.part*' | Sort-Object Name
+          if ($parts.Count -ne 6) { throw "Expected 6 canonical v0.12.1 binary overlay parts, found $($parts.Count)." }
+          $compressed=Join-Path $env:RUNNER_TEMP 'trace-v0121.patch.xz'
+          $dest=[IO.File]::Open($compressed,[IO.FileMode]::Create,[IO.FileAccess]::Write)
+          try {
+            foreach($part in $parts) {
+              $src=[IO.File]::OpenRead($part.FullName)
+              try { $src.CopyTo($dest) } finally { $src.Dispose() }
+            }
+          } finally { $dest.Dispose() }
+          $size=(Get-Item $compressed).Length
+          if ($size -ne 70844) { throw "v0.12.1 compressed overlay size mismatch: $size" }
+          $compressedHash=(Get-FileHash $compressed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($compressedHash -ne 'd67876cc9cc5cf281659383b9d287959b407ae71efe44661ac2db4ef4387af59') { throw "v0.12.1 compressed overlay SHA-256 mismatch: $compressedHash" }
+          $patch=Join-Path $env:RUNNER_TEMP 'trace-v0121.patch'
+          python -c "import lzma,pathlib; pathlib.Path(r'$patch').write_bytes(lzma.decompress(pathlib.Path(r'$compressed').read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress the v0.12.1 overlay.' }
+          $patchHash=(Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($patchHash -ne '0408249ac1e0496ce0923545ca77979577ce29d4176b4beac2223de66fb63c94') { throw "v0.12.1 patch SHA-256 mismatch: $patchHash" }
+          Push-Location work
+          git init | Out-Null
+          git config core.whitespace cr-at-eol
+          git apply --check $patch
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'v0.12.1 hardening overlay does not apply cleanly to the exact green v0.12 source.' }
+          git apply $patch
+          $apply=$LASTEXITCODE
+          Pop-Location
+          if ($apply -ne 0) { throw 'Could not apply the exact v0.12.1 hardening overlay.' }
+
+      - name: Verify v0.12.1 version and UX contracts
+        shell: pwsh
+        working-directory: work
+        run: |
+          foreach ($p in @('package.json','setup-shell/package.json','src-tauri/Cargo.toml','src-tauri/tauri.conf.json','setup-shell/src-tauri/Cargo.toml','setup-shell/src-tauri/tauri.conf.json')) {
+            if ((Get-Content $p -Raw) -notmatch '0\.12\.1') { throw "Version 0.12.1 missing from $p" }
+          }
+          if ((Get-Content 'setup-shell/src/app.js' -Raw) -match '0\.9\.0') { throw 'Stale setup UI version 0.9.0 is still present.' }
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace app JavaScript syntax failed.' }
+          node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup JavaScript syntax failed.' }
+          node tests/v12_analysis_math.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Intercoder mathematics contract failed.' }
+          python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Schema contract failed.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Office/import/display regression failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Usability regression failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'Transcription regression failed.' }
+          python tests/v11_pdf_text.py
+          if ($LASTEXITCODE -ne 0) { throw 'PDF text regression failed.' }
+          python tests/v12_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.12 analysis/intercoder regression failed.' }
+          python tests/v0121_hardening.py
+          if ($LASTEXITCODE -ne 0) { throw 'v0.12.1 hardening contract failed.' }
+
+      - name: Build both frontends
+        shell: pwsh
+        working-directory: work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          Push-Location setup-shell
+          npm run build
+          $setupBuild=$LASTEXITCODE
+          Pop-Location
+          if ($setupBuild -ne 0) { throw 'Trace setup frontend build failed.' }
+
+      - name: Rust compile and unit tests
+        shell: pwsh
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12.1 Rust compile check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12.1 Rust tests failed.' }
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null
+          [IO.File]::WriteAllBytes('setup-shell/src-tauri/payload/trace-payload.exe',[byte[]](0x4D,0x5A))
+          cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
+          $setupCheck=$LASTEXITCODE
+          Remove-Item setup-shell/src-tauri/payload/trace-payload.exe -Force
+          if ($setupCheck -ne 0) { throw 'Trace v0.12.1 setup-shell Rust compile check failed.' }
+
+      - name: Upload proven v0.12.1 hardening source checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Hardening-Green-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            work/index.html
+            work/assets/**
+            work/package.json
+            work/src/**
+            work/database/**
+            work/src-tauri/build.rs
+            work/src-tauri/Cargo.toml
+            work/src-tauri/Cargo.lock
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/src-tauri/icons/**
+            work/src-tauri/windows/**
+            work/setup-shell/index.html
+            work/setup-shell/assets/**
+            work/setup-shell/package.json
+            work/setup-shell/scripts/**
+            work/setup-shell/src/**
+            work/setup-shell/src-tauri/build.rs
+            work/setup-shell/src-tauri/Cargo.toml
+            work/setup-shell/src-tauri/Cargo.lock
+            work/setup-shell/src-tauri/tauri.conf.json
+            work/setup-shell/src-tauri/src/**
+            work/setup-shell/src-tauri/icons/**
+            work/tests/**
+            work/scripts/**
+
+      - name: Publish gate result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin trace-v0121
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          result=${{ job.status }}
+          workflow=Trace v0.12.1 UX and installer hardening gate
+          artifact=Trace-v0.12.1-Hardening-Green-Source
+          "@ | Set-Content build-status/v0121-hardening-gate.txt
+          git add build-status/v0121-hardening-gate.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.12.1 hardening gate result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
