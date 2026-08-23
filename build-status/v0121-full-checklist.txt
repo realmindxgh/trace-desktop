@@ -1,0 +1,9 @@
+Trace v0.12.1 full AGENTS.md checklist completion
+started=2026-08-23
+branch=trace-v0121
+scope=all implementable checklist items in AGENTS.md, not only P0 release blockers
+status=in_progress
+source_baseline_run=32649590459
+previous_release_run=32651178336
+current_focus=side_panel_resizing+recovery_notice+themes_analyse_write+accessibility+dpi_layout+performance_import_recovery+visual_contracts+expanded_upgrade_matrix
+manual_real_machine_items=must be explicitly identified; cannot be falsely claimed from CI
