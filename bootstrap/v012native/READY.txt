@@ -1,0 +1,9 @@
+version=0.12.0
+parts=1
+base64=844
+patch_sha256=d3958b5e39a9c519210eb2eed1b20edb2e6431d3868feb7fdcc913f023381175
+compressed_sha256=3cf5037a936a5319581bfaa867ff28891f6ce1332e03e3e6805c169802b93258
+patch_bytes=1481
+compressed_bytes=632
+fixes=native_build_scripts+coder_query_lifetime
+gate=ready
