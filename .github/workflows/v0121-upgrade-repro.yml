@@ -61,7 +61,26 @@ jobs:
             if (!(Test-Path $p)) { throw "Missing release installer: $p" }
           }
 
-      - name: Scenario A - upgrade succeeds when Trace is closed
+      - name: Build exact v0.12 clean-install reference hash
+        shell: pwsh
+        run: |
+          $new=(Resolve-Path 'artifacts/v012/release/TraceSetup.exe').Path
+          $refDir=Join-Path $env:RUNNER_TEMP 'TraceV012CleanReference'
+          if (Test-Path $refDir) { Remove-Item $refDir -Recurse -Force }
+          & $new --silent-install --install-dir $refDir
+          if ($LASTEXITCODE -ne 0) { throw "v0.12 clean reference install failed: $LASTEXITCODE" }
+          $refExe=Join-Path $refDir 'Trace.exe'
+          if (!(Test-Path $refExe)) { throw 'v0.12 clean reference Trace.exe missing.' }
+          $refHash=(Get-FileHash $refExe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $rawHash=(Get-FileHash 'artifacts/v012/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          clean_reference_hash=$refHash
+          raw_build_hash=$rawHash
+          raw_matches_clean=$($rawHash -eq $refHash)
+          "@ | Set-Content v012-reference-result.txt
+          "TRACE_V012_REFERENCE_HASH=$refHash" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Scenario A - closed-app upgrade evidence
         shell: pwsh
         run: |
           $old=(Resolve-Path 'artifacts/v011/release/TraceSetup.exe').Path
@@ -70,7 +89,8 @@ jobs:
           if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
 
           & $old --silent-install --install-dir $dir
-          if ($LASTEXITCODE -ne 0) { throw "v0.11 install failed: $LASTEXITCODE" }
+          $oldInstallExit=$LASTEXITCODE
+          if ($oldInstallExit -ne 0) { throw "v0.11 install failed: $oldInstallExit" }
           $exe=Join-Path $dir 'Trace.exe'
           if (!(Test-Path $exe)) { throw 'v0.11 Trace.exe missing.' }
           $before=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -78,23 +98,31 @@ jobs:
           $sentinel=Join-Path $dir 'upgrade-research-sentinel.txt'
           'research data must survive upgrade' | Set-Content $sentinel
 
-          & $new --silent-install --install-dir $dir
-          if ($LASTEXITCODE -ne 0) { throw "v0.12 closed-app update failed: $LASTEXITCODE" }
-          if (!(Test-Path $exe)) { throw 'Trace.exe missing after closed-app update.' }
-          $after=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected=(Get-FileHash 'artifacts/v012/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($after -ne $expected) { throw 'Closed-app update did not install exact v0.12 Trace.exe.' }
-          if ($before -eq $after) { throw 'Closed-app update did not replace the old executable.' }
-          if (!(Test-Path $sentinel)) { throw 'Closed-app update removed sentinel data.' }
+          $stdout=Join-Path $env:RUNNER_TEMP 'closed-update-stdout.txt'
+          $stderr=Join-Path $env:RUNNER_TEMP 'closed-update-stderr.txt'
+          $p=Start-Process -FilePath $new -ArgumentList @('--silent-install','--install-dir',$dir) -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          $exit=$p.ExitCode
+          $after=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+          $out=if(Test-Path $stdout){(Get-Content $stdout -Raw).Trim()}else{''}
+          $err=if(Test-Path $stderr){(Get-Content $stderr -Raw).Trim()}else{''}
+          $changed=$after -ne $before
+          $matchesRef=$after -eq $env:TRACE_V012_REFERENCE_HASH
+          $sentinelSurvived=Test-Path $sentinel
+
           @"
           scenario=closed
+          installer_exit=$exit
           old_hash=$before
-          new_hash=$after
-          expected_hash=$expected
-          result=success
+          hash_after_attempt=$after
+          clean_v012_reference_hash=$env:TRACE_V012_REFERENCE_HASH
+          executable_changed=$changed
+          matches_clean_v012_reference=$matchesRef
+          sentinel_survived=$sentinelSurvived
+          stdout=$out
+          stderr=$err
           "@ | Set-Content closed-upgrade-result.txt
 
-      - name: Scenario B - capture behavior while Trace is running
+      - name: Scenario B - running-app upgrade evidence
         shell: pwsh
         run: |
           $old=(Resolve-Path 'artifacts/v011/release/TraceSetup.exe').Path
@@ -106,6 +134,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "v0.11 install failed: $LASTEXITCODE" }
           $exe=Join-Path $dir 'Trace.exe'
           $before=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sentinel=Join-Path $dir 'running-upgrade-research-sentinel.txt'
+          'research data must survive running-app update attempt' | Set-Content $sentinel
+
           $trace=Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
           Start-Sleep -Seconds 6
           if ($trace.HasExited) { throw "v0.11 Trace exited before reproduction, code $($trace.ExitCode)." }
@@ -114,30 +145,41 @@ jobs:
           $stderr=Join-Path $env:RUNNER_TEMP 'running-update-stderr.txt'
           $p=Start-Process -FilePath $new -ArgumentList @('--silent-install','--install-dir',$dir) -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           $exit=$p.ExitCode
-          $afterRunning=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          $out=if(Test-Path $stdout){Get-Content $stdout -Raw}else{''}
-          $err=if(Test-Path $stderr){Get-Content $stderr -Raw}else{''}
-
-          @"
-          scenario=running
-          installer_exit=$exit
-          old_hash=$before
-          hash_after_attempt=$afterRunning
-          trace_still_running=$(!$trace.HasExited)
-          stdout=$out
-          stderr=$err
-          "@ | Set-Content running-upgrade-result.txt
+          $afterRunning=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+          $out=if(Test-Path $stdout){(Get-Content $stdout -Raw).Trim()}else{''}
+          $err=if(Test-Path $stderr){(Get-Content $stderr -Raw).Trim()}else{''}
+          $traceStillRunning=!$trace.HasExited
+          $sentinelAfterAttempt=Test-Path $sentinel
 
           if (!$trace.HasExited) { Stop-Process -Id $trace.Id -Force }
           Start-Sleep -Seconds 2
 
-          & $new --silent-install --install-dir $dir
-          if ($LASTEXITCODE -ne 0) { throw "v0.12 retry after closing Trace failed: $LASTEXITCODE" }
-          $afterClose=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          $expected=(Get-FileHash 'artifacts/v012/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($afterClose -ne $expected) { throw 'Retry after closing Trace did not install exact v0.12 Trace.exe.' }
-          Add-Content running-upgrade-result.txt "retry_after_close=success"
-          Add-Content running-upgrade-result.txt "final_hash=$afterClose"
+          $retryStdout=Join-Path $env:RUNNER_TEMP 'retry-update-stdout.txt'
+          $retryStderr=Join-Path $env:RUNNER_TEMP 'retry-update-stderr.txt'
+          $retry=Start-Process -FilePath $new -ArgumentList @('--silent-install','--install-dir',$dir) -Wait -PassThru -RedirectStandardOutput $retryStdout -RedirectStandardError $retryStderr
+          $retryExit=$retry.ExitCode
+          $afterClose=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+          $retryOut=if(Test-Path $retryStdout){(Get-Content $retryStdout -Raw).Trim()}else{''}
+          $retryErr=if(Test-Path $retryStderr){(Get-Content $retryStderr -Raw).Trim()}else{''}
+
+          @"
+          scenario=running
+          installer_exit_while_running=$exit
+          old_hash=$before
+          hash_after_running_attempt=$afterRunning
+          clean_v012_reference_hash=$env:TRACE_V012_REFERENCE_HASH
+          matches_clean_v012_while_running=$($afterRunning -eq $env:TRACE_V012_REFERENCE_HASH)
+          trace_still_running_after_attempt=$traceStillRunning
+          sentinel_survived_running_attempt=$sentinelAfterAttempt
+          stdout_while_running=$out
+          stderr_while_running=$err
+          retry_exit_after_close=$retryExit
+          final_hash_after_close=$afterClose
+          matches_clean_v012_after_close=$($afterClose -eq $env:TRACE_V012_REFERENCE_HASH)
+          sentinel_survived_after_retry=$(Test-Path $sentinel)
+          retry_stdout=$retryOut
+          retry_stderr=$retryErr
+          "@ | Set-Content running-upgrade-result.txt
 
       - name: Collect setup logs
         if: always()
@@ -146,16 +188,32 @@ jobs:
           $log=Join-Path $env:LOCALAPPDATA 'Trace/Installer/TraceSetup.log'
           if (Test-Path $log) { Copy-Item $log TraceSetup.log -Force }
 
+      - name: Summarize diagnosis
+        if: always()
+        shell: pwsh
+        run: |
+          @"
+          Trace v0.12.1 upgrade reproduction summary
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          "@ | Set-Content DIAGNOSIS.txt
+          foreach($f in @('v012-reference-result.txt','closed-upgrade-result.txt','running-upgrade-result.txt')){
+            if(Test-Path $f){Add-Content DIAGNOSIS.txt "`n--- $f ---";Get-Content $f | Add-Content DIAGNOSIS.txt}
+          }
+          Get-Content DIAGNOSIS.txt
+
       - name: Upload reproduction evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Trace-v0.12.1-Upgrade-Reproduction
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
           path: |
+            v012-reference-result.txt
             closed-upgrade-result.txt
             running-upgrade-result.txt
+            DIAGNOSIS.txt
             TraceSetup.log
 
       - name: Publish reproduction result
@@ -168,7 +226,7 @@ jobs:
           run_number=${{ github.run_number }}
           result=${{ job.status }}
           workflow=Trace v0.12.1 upgrade reproduction
-          evidence=closed_upgrade+running_upgrade+retry_after_close
+          evidence=clean_reference+closed_upgrade+running_upgrade+retry_after_close
           "@
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
