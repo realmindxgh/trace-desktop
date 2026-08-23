@@ -173,6 +173,8 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: |
+            source/work/index.html
+            source/work/assets/**
             source/work/package.json
             source/work/package-lock.json
             source/work/src/**
@@ -183,6 +185,8 @@ jobs:
             source/work/src-tauri/src/**
             source/work/src-tauri/icons/**
             source/work/src-tauri/windows/**
+            source/work/setup-shell/index.html
+            source/work/setup-shell/assets/**
             source/work/setup-shell/package.json
             source/work/setup-shell/package-lock.json
             source/work/setup-shell/scripts/**
