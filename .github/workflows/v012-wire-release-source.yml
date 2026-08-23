@@ -1,0 +1,42 @@
+name: Wire Trace v0.12 release source
+
+on:
+  push:
+    branches:
+      - trace-v012
+    paths:
+      - '.github/workflows/v012-wire-release-source.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout v0.12
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v012
+
+      - name: Point final installer at corrected green-gate run
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('.github/workflows/windows-v012-final.yml')
+          text=path.read_text(encoding='utf-8')
+          old='32635967904'
+          new='32638051355'
+          count=text.count(old)
+          if count < 1:
+              raise SystemExit(f'Expected old source gate id {old} in final workflow, found {count}')
+          path.write_text(text.replace(old,new),encoding='utf-8')
+          print(f'Rewired {count} source-gate references to {new}')
+          PY
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/windows-v012-final.yml
+          git commit -m 'ci: wire v0.12 installer to corrected source gate [skip ci]'
+          git pull --rebase origin trace-v012
+          git push origin HEAD:trace-v012
