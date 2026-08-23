@@ -1,5 +1,5 @@
 run_id=32635701348
 run_number=2
 source_sha=3bb67b0f0864dbab44f21f6bdffdc728336b018e
-result=running
+result=success
 workflow=Trace v0.12 clean baseline source
