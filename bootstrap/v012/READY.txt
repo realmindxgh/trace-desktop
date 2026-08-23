@@ -1,0 +1,12 @@
+Trace v0.12 analysis/intercoder overlay
+base_version=0.11.0 exact final baseline
+version=0.12.0
+parts=2
+part00_chars=12000
+part01_chars=10488
+base64_chars=22488
+patch_bytes=79146
+patch_sha256=c022173965e5a554e6564313566f4887ddb58d44d9d6b930d74beccd19d41ee3
+compressed_bytes=16864
+compressed_sha256=2a226e1c683f44d07bd4b12c8271a126820c6e39415bb72e561f005f75f38e83
+features=named human coders; participant-code matrix; code co-occurrence; negative-case finder; participant-group comparisons; transcript intercoder agreement; Cohen kappa; CSV exports; frequency visuals
