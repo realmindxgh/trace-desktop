@@ -1,0 +1,207 @@
+name: Trace v0.12.1 upgrade diagnosis
+
+on:
+  push:
+    branches: [trace-v0121]
+    paths:
+      - '.github/workflows/v0121-upgrade-diagnose.yml'
+      - 'release/v0121-diagnose-go.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-v0121-upgrade-diagnose
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Publish run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          result=running
+          workflow=Trace v0.12.1 upgrade diagnosis
+          "@ | Set-Content build-status/v0121-upgrade-diagnose.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v0121-upgrade-diagnose.txt
+          git commit -m 'ci: record v0.12.1 upgrade diagnosis run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download verified releases
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/v011 | Out-Null
+          New-Item -ItemType Directory -Force -Path artifacts/v012 | Out-Null
+          gh run download 32582256355 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.11-Exact-Verified-Windows-Release' --dir artifacts/v011
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download verified v0.11 release.' }
+          gh run download 32639353769 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Exact-Verified-Windows-Release' --dir artifacts/v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download verified v0.12 release.' }
+
+      - name: Establish clean v0.12 installed reference
+        shell: pwsh
+        run: |
+          $new=(Resolve-Path 'artifacts/v012/release/TraceSetup.exe').Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceV012Reference'
+          if(Test-Path $dir){Remove-Item $dir -Recurse -Force}
+          & $new --silent-install --install-dir $dir *> reference-command.txt
+          if($LASTEXITCODE -ne 0){Get-Content reference-command.txt;throw 'Could not establish v0.12 installed reference.'}
+          $exe=Join-Path $dir 'Trace.exe'
+          if(!(Test-Path $exe)){throw 'Reference Trace.exe missing.'}
+          $hash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_V012_INSTALLED_HASH=$hash" | Out-File $env:GITHUB_ENV -Append
+          @"
+          installed_reference_hash=$hash
+          raw_build_hash=$((Get-FileHash 'artifacts/v012/src-tauri/target/release/Trace.exe' -Algorithm SHA256).Hash.ToLowerInvariant())
+          "@ | Set-Content reference-result.txt
+
+      - name: Diagnose closed-app update
+        shell: pwsh
+        run: |
+          $old=(Resolve-Path 'artifacts/v011/release/TraceSetup.exe').Path
+          $new=(Resolve-Path 'artifacts/v012/release/TraceSetup.exe').Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceUpgradeClosed'
+          if(Test-Path $dir){Remove-Item $dir -Recurse -Force}
+          & $old --silent-install --install-dir $dir *> closed-old-install.txt
+          if($LASTEXITCODE -ne 0){throw 'Could not install v0.11 for closed-app diagnosis.'}
+          $exe=Join-Path $dir 'Trace.exe'
+          $oldHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sentinel=Join-Path $dir 'research-sentinel.txt'
+          'must survive' | Set-Content $sentinel
+          & $new --silent-install --install-dir $dir *> closed-update-command.txt
+          $exit=$LASTEXITCODE
+          $after=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+          @"
+          scenario=closed
+          update_exit=$exit
+          old_hash=$oldHash
+          after_hash=$after
+          installed_v012_reference_hash=$env:TRACE_V012_INSTALLED_HASH
+          executable_changed=$($after -ne $oldHash)
+          matches_v012_reference=$($after -eq $env:TRACE_V012_INSTALLED_HASH)
+          sentinel_survived=$(Test-Path $sentinel)
+          "@ | Set-Content closed-result.txt
+          Add-Content closed-result.txt '--- command output ---'
+          if(Test-Path closed-update-command.txt){Get-Content closed-update-command.txt | Add-Content closed-result.txt}
+          Get-Content closed-result.txt
+
+      - name: Diagnose running-app update
+        shell: pwsh
+        run: |
+          $old=(Resolve-Path 'artifacts/v011/release/TraceSetup.exe').Path
+          $new=(Resolve-Path 'artifacts/v012/release/TraceSetup.exe').Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceUpgradeRunning'
+          if(Test-Path $dir){Remove-Item $dir -Recurse -Force}
+          & $old --silent-install --install-dir $dir *> running-old-install.txt
+          if($LASTEXITCODE -ne 0){throw 'Could not install v0.11 for running-app diagnosis.'}
+          $exe=Join-Path $dir 'Trace.exe'
+          $oldHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sentinel=Join-Path $dir 'research-sentinel.txt'
+          'must survive' | Set-Content $sentinel
+          $trace=Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+          Start-Sleep -Seconds 6
+          if($trace.HasExited){throw "Trace exited before update attempt: $($trace.ExitCode)"}
+
+          & $new --silent-install --install-dir $dir *> running-update-command.txt
+          $runningExit=$LASTEXITCODE
+          $during=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+          $stillRunning=!$trace.HasExited
+          $sentinelDuring=Test-Path $sentinel
+
+          if(!$trace.HasExited){Stop-Process -Id $trace.Id -Force}
+          Start-Sleep -Seconds 2
+
+          & $new --silent-install --install-dir $dir *> retry-after-close-command.txt
+          $retryExit=$LASTEXITCODE
+          $final=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+
+          @"
+          scenario=running
+          update_exit_while_running=$runningExit
+          old_hash=$oldHash
+          hash_after_running_attempt=$during
+          installed_v012_reference_hash=$env:TRACE_V012_INSTALLED_HASH
+          matches_v012_while_running=$($during -eq $env:TRACE_V012_INSTALLED_HASH)
+          trace_still_running_after_attempt=$stillRunning
+          sentinel_survived_running_attempt=$sentinelDuring
+          retry_exit_after_close=$retryExit
+          final_hash_after_close=$final
+          matches_v012_after_close=$($final -eq $env:TRACE_V012_INSTALLED_HASH)
+          sentinel_survived_after_retry=$(Test-Path $sentinel)
+          "@ | Set-Content running-result.txt
+          Add-Content running-result.txt '--- running command output ---'
+          if(Test-Path running-update-command.txt){Get-Content running-update-command.txt | Add-Content running-result.txt}
+          Add-Content running-result.txt '--- retry command output ---'
+          if(Test-Path retry-after-close-command.txt){Get-Content retry-after-close-command.txt | Add-Content running-result.txt}
+          Get-Content running-result.txt
+
+      - name: Collect setup log and summary
+        if: always()
+        shell: pwsh
+        run: |
+          $log=Join-Path $env:LOCALAPPDATA 'Trace/Installer/TraceSetup.log'
+          if(Test-Path $log){Copy-Item $log TraceSetup.log -Force}
+          @"
+          Trace v0.12.1 upgrade diagnosis
+          run_id=${{ github.run_id }}
+          "@ | Set-Content DIAGNOSIS.txt
+          foreach($f in @('reference-result.txt','closed-result.txt','running-result.txt')){
+            if(Test-Path $f){Add-Content DIAGNOSIS.txt "`n--- $f ---";Get-Content $f | Add-Content DIAGNOSIS.txt}
+          }
+          Get-Content DIAGNOSIS.txt
+
+      - name: Upload diagnosis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Upgrade-Diagnosis
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            reference-result.txt
+            closed-result.txt
+            running-result.txt
+            DIAGNOSIS.txt
+            TraceSetup.log
+            *-command.txt
+
+      - name: Publish result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $status=@"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          result=${{ job.status }}
+          workflow=Trace v0.12.1 upgrade diagnosis
+          "@
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git reset --hard HEAD
+          git pull --rebase origin trace-v0121
+          $status | Set-Content build-status/v0121-upgrade-diagnose.txt
+          git add build-status/v0121-upgrade-diagnose.txt
+          if(git status --porcelain){
+            git commit -m 'ci: record v0.12.1 upgrade diagnosis result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
