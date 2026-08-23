@@ -161,8 +161,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 Rust compile check failed.' }
           cargo test --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 Rust tests failed.' }
+          # The branded setup embeds the real NSIS payload only in the final release workflow.
+          # For this source compile gate, provide a temporary MZ placeholder solely so include_bytes! can compile.
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null
+          [IO.File]::WriteAllBytes('setup-shell/src-tauri/payload/trace-payload.exe',[byte[]](0x4D,0x5A))
           cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
-          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12 setup-shell Rust compile check failed.' }
+          $setupCheck=$LASTEXITCODE
+          Remove-Item setup-shell/src-tauri/payload/trace-payload.exe -Force
+          if ($setupCheck -ne 0) { throw 'Trace v0.12 setup-shell Rust compile check failed.' }
 
       - name: Upload proven complete v0.12 source checkpoint
         uses: actions/upload-artifact@v4
