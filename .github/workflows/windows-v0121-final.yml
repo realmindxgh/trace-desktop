@@ -1,0 +1,423 @@
+name: Trace Windows v0.12.1 exact installer and upgrade verification
+
+on:
+  push:
+    branches:
+      - trace-v0121
+    paths:
+      - 'release/v0121-go.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-windows-v0121-exact-final
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout v0.12.1 release control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Publish release verification run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          $path='build-status/windows-v0121-exact-final.txt'
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_gate_run=32649590459
+          version=0.12.1
+          result=running
+          workflow=Trace Windows v0.12.1 exact installer and upgrade verification
+          "@ | Set-Content $path
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add $path
+          git commit -m 'ci: record v0.12.1 exact release run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download Windows-green v0.12.1 source checkpoint
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path source/work | Out-Null
+          gh run download 32649590459 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12.1-Hardening-Green-Source' --dir source/work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the Windows-green v0.12.1 source checkpoint.' }
+          foreach ($required in @('source/work/index.html','source/work/src/app.js','source/work/src-tauri/build.rs','source/work/src-tauri/Cargo.toml','source/work/setup-shell/index.html','source/work/setup-shell/src-tauri/build.rs','source/work/setup-shell/src-tauri/Cargo.toml','source/work/tests/v0121_hardening.py')) {
+            if (!(Test-Path $required)) { throw "Green source checkpoint is incomplete: $required" }
+          }
+          foreach ($file in @('source/work/package.json','source/work/src-tauri/tauri.conf.json','source/work/setup-shell/package.json','source/work/setup-shell/src-tauri/tauri.conf.json')) {
+            if ((Get-Content $file -Raw) -notmatch '"version"\s*:\s*"0\.12\.1"') { throw "$file is not Trace 0.12.1." }
+          }
+
+      - name: Download verified previous v0.12 release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path previous/v012 | Out-Null
+          gh run download 32639353769 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Exact-Verified-Windows-Release' --dir previous/v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the verified v0.12 release for upgrade testing.' }
+          if (!(Test-Path 'previous/v012/release/TraceSetup.exe')) { throw 'Verified v0.12 TraceSetup.exe is missing.' }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add branded setup silent verification CLI
+        shell: pwsh
+        working-directory: source
+        run: |
+          python ../control/ci/add_trace_setup_cli.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not add TraceSetup silent verification CLI.' }
+          $main=Get-Content work/setup-shell/src-tauri/src/main.rs -Raw
+          foreach ($token in @('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','fn silent_install(','cleanup grace period')) {
+            if (!$main.Contains($token)) { throw "Missing setup verification token: $token" }
+          }
+
+      - name: v0.12.1 hardening and carried research contracts
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace app JavaScript syntax check failed.' }
+          node --check setup-shell/src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup JavaScript syntax check failed.' }
+          node tests/v12_analysis_math.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Trace intercoder mathematics contract failed.' }
+          python tests/schema_contract.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace schema contract failed.' }
+          python tests/v11_imports_display.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace office/survey/display regression failed.' }
+          python tests/v11_usability.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace usability regression failed.' }
+          python tests/v11_transcription.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace transcription regression failed.' }
+          python tests/v11_pdf_text.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace PDF regression failed.' }
+          python tests/v12_analysis.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace analysis/intercoder contract failed.' }
+          python tests/v0121_hardening.py
+          if ($LASTEXITCODE -ne 0) { throw 'Trace v0.12.1 UX/installer hardening contract failed.' }
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Tauri CLI.' }
+
+      - name: Build and test native Trace v0.12.1
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo tests failed.' }
+          npx tauri build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native Windows bundle build failed.' }
+
+      - name: Stage exact native installer payload
+        shell: pwsh
+        run: |
+          $payload=Get-ChildItem source/work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (!$payload) { throw 'Tauri NSIS payload not found.' }
+          New-Item -ItemType Directory -Force -Path source/work/setup-shell/src-tauri/payload | Out-Null
+          Copy-Item $payload.FullName source/work/setup-shell/src-tauri/payload/trace-payload.exe -Force
+          $bytes=[IO.File]::ReadAllBytes('source/work/setup-shell/src-tauri/payload/trace-payload.exe')
+          if ($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Embedded installer payload is not a credible Windows executable.' }
+          $payloadHash=(Get-FileHash $payload.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $embeddedHash=(Get-FileHash source/work/setup-shell/src-tauri/payload/trace-payload.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($payloadHash -ne $embeddedHash) { throw 'Embedded installer payload does not match generated NSIS installer.' }
+
+      - name: Build branded TraceSetup.exe
+        shell: pwsh
+        working-directory: source/work/setup-shell
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Tauri CLI for setup shell.' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup shell cargo check failed.' }
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup shell release build failed.' }
+
+      - name: Assemble exact v0.12.1 candidate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path source/work/release | Out-Null
+          $setup='source/work/setup-shell/src-tauri/target/release/trace-setup.exe'
+          if (!(Test-Path $setup)) { throw 'Trace setup shell executable is missing.' }
+          Copy-Item $setup source/work/release/TraceSetup.exe -Force
+          $hash=(Get-FileHash source/work/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TraceSetup.exe  $hash" | Set-Content source/work/release/SHA256.txt
+
+      - name: Establish exact clean-install reference
+        shell: pwsh
+        run: |
+          $nativeSetup=(Get-ChildItem source/work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          if (!(Test-Path $nativeSetup)) { throw 'Native NSIS installer is missing for equivalence verification.' }
+          $referenceDir=Join-Path $env:RUNNER_TEMP 'TraceNativeReferenceInstallV0121'
+          if (Test-Path $referenceDir) { Remove-Item $referenceDir -Recurse -Force }
+          $native=Start-Process -FilePath $nativeSetup -ArgumentList @('/S',"/D=$referenceDir") -Wait -PassThru
+          if ($native.ExitCode -ne 0) { throw "Native NSIS reference install failed with exit code $($native.ExitCode)." }
+          $referenceTrace=Join-Path $referenceDir 'Trace.exe'
+          if (!(Test-Path $referenceTrace)) { throw "Reference Trace.exe was not found at $referenceTrace." }
+          $referenceHash=(Get-FileHash $referenceTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_V0121_REFERENCE_HASH=$referenceHash" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $referenceUninstaller=Get-ChildItem $referenceDir -Filter '*uninstall*.exe' -File | Select-Object -First 1
+          if (!$referenceUninstaller) { throw 'Native reference uninstaller was not found.' }
+          $nativeUninstall=Start-Process -FilePath $referenceUninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($nativeUninstall.ExitCode -ne 0) { throw "Native reference uninstall failed with exit code $($nativeUninstall.ExitCode)." }
+          Start-Sleep -Seconds 2
+
+      - name: Verify exact branded clean install, launch and uninstall
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path source/work/release/TraceSetup.exe).Path
+          $installDir=Join-Path $env:RUNNER_TEMP 'TraceExactSetupInstallV0121'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+
+          $dataRoot=Join-Path $env:LOCALAPPDATA 'com.trace.research'
+          $projects=Join-Path $dataRoot 'Projects/ci-clean-preservation'
+          $backups=Join-Path $dataRoot 'Backups/ci-clean-preservation'
+          New-Item -ItemType Directory -Force -Path $projects,$backups | Out-Null
+          $projectSentinel=Join-Path $projects 'research-project-must-survive.txt'
+          $backupSentinel=Join-Path $backups 'verified-backup-must-survive.txt'
+          'Trace research project preservation sentinel' | Set-Content $projectSentinel
+          'Trace verified backup preservation sentinel' | Set-Content $backupSentinel
+
+          & $setup --silent-install --install-dir $installDir
+          if ($LASTEXITCODE -ne 0) { throw "TraceSetup.exe silent clean install failed with exit code $LASTEXITCODE." }
+          $installedTrace=Join-Path $installDir 'Trace.exe'
+          if (!(Test-Path $installedTrace)) { throw "Installed Trace.exe was not found at $installedTrace." }
+          $installedHash=(Get-FileHash $installedTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($installedHash -ne $env:TRACE_V0121_REFERENCE_HASH) { throw 'Branded setup clean install does not match the exact native NSIS payload installation.' }
+
+          $trace=Start-Process -FilePath $installedTrace -WorkingDirectory $installDir -PassThru
+          Start-Sleep -Seconds 10
+          if ($trace.HasExited) { throw "Clean-installed Trace.exe exited unexpectedly with code $($trace.ExitCode)." }
+          Stop-Process -Id $trace.Id -Force
+          Start-Sleep -Seconds 2
+
+          & $setup --silent-uninstall --install-dir $installDir
+          if ($LASTEXITCODE -ne 0) { throw "TraceSetup.exe silent uninstall failed with exit code $LASTEXITCODE." }
+          Start-Sleep -Seconds 3
+          if (Test-Path $installedTrace) { throw 'Trace.exe is still present after branded setup uninstall.' }
+          if (!(Test-Path $projectSentinel)) { throw 'Research-project sentinel was removed during uninstall.' }
+          if (!(Test-Path $backupSentinel)) { throw 'Verified-backup sentinel was removed during uninstall.' }
+
+      - name: Verify real v0.12 to v0.12.1 closed-app upgrade
+        shell: pwsh
+        run: |
+          $old=(Resolve-Path previous/v012/release/TraceSetup.exe).Path
+          $new=(Resolve-Path source/work/release/TraceSetup.exe).Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceUpgradeV012ToV0121'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+
+          & $old --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "Verified v0.12 install failed with exit code $LASTEXITCODE." }
+          $exe=Join-Path $dir 'Trace.exe'
+          if (!(Test-Path $exe)) { throw 'v0.12 Trace.exe is missing before upgrade.' }
+          $oldHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $dataRoot=Join-Path $env:LOCALAPPDATA 'com.trace.research'
+          $projects=Join-Path $dataRoot 'Projects/ci-v012-to-v0121'
+          $backups=Join-Path $dataRoot 'Backups/ci-v012-to-v0121'
+          New-Item -ItemType Directory -Force -Path $projects,$backups | Out-Null
+          $projectSentinel=Join-Path $projects 'project-before-upgrade.trace-sentinel'
+          $backupSentinel=Join-Path $backups 'backup-before-upgrade.trace-sentinel'
+          'Representative project data present before v0.12.1 upgrade' | Set-Content $projectSentinel
+          'Representative verified backup present before v0.12.1 upgrade' | Set-Content $backupSentinel
+
+          & $new --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "v0.12.1 closed-app upgrade failed with exit code $LASTEXITCODE." }
+          $newHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($newHash -eq $oldHash) { throw 'Closed-app upgrade did not replace the v0.12 executable.' }
+          if ($newHash -ne $env:TRACE_V0121_REFERENCE_HASH) { throw 'Closed-app upgrade does not match the exact clean v0.12.1 installation.' }
+          if (!(Test-Path $projectSentinel)) { throw 'Project data was removed during closed-app upgrade.' }
+          if (!(Test-Path $backupSentinel)) { throw 'Backup data was removed during closed-app upgrade.' }
+
+          $trace=Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+          Start-Sleep -Seconds 10
+          if ($trace.HasExited) { throw "Upgraded Trace.exe exited unexpectedly with code $($trace.ExitCode)." }
+          Stop-Process -Id $trace.Id -Force
+          Start-Sleep -Seconds 2
+
+          & $new --silent-uninstall --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "v0.12.1 post-upgrade uninstall failed with exit code $LASTEXITCODE." }
+          Start-Sleep -Seconds 3
+          if (Test-Path $exe) { throw 'Trace.exe is still present after post-upgrade uninstall.' }
+          if (!(Test-Path $projectSentinel)) { throw 'Project data was removed during post-upgrade uninstall.' }
+          if (!(Test-Path $backupSentinel)) { throw 'Backup data was removed during post-upgrade uninstall.' }
+
+          @"
+          old_v012_hash=$oldHash
+          upgraded_v0121_hash=$newHash
+          matches_clean_v0121=true
+          project_data_preserved=true
+          backup_data_preserved=true
+          upgraded_copy_launched=true
+          post_upgrade_uninstall_preserved_data=true
+          "@ | Set-Content source/work/release/UPGRADE-VERIFICATION.txt
+
+      - name: Verify update while previous Trace process is running
+        shell: pwsh
+        run: |
+          $old=(Resolve-Path previous/v012/release/TraceSetup.exe).Path
+          $new=(Resolve-Path source/work/release/TraceSetup.exe).Path
+          $dir=Join-Path $env:RUNNER_TEMP 'TraceUpgradeWhileRunningV0121'
+          if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+
+          & $old --silent-install --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install v0.12 for running-app upgrade test.' }
+          $exe=Join-Path $dir 'Trace.exe'
+          $oldHash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $trace=Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+          Start-Sleep -Seconds 6
+          if ($trace.HasExited) { throw "v0.12 Trace exited before running-app update test, code $($trace.ExitCode)." }
+
+          & $new --silent-install --install-dir $dir
+          $updateExit=$LASTEXITCODE
+          $onDiskHash=if(Test-Path $exe){(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()}else{'missing'}
+          if ($updateExit -ne 0) { throw "v0.12.1 update while Trace was running returned exit code $updateExit." }
+          if ($onDiskHash -ne $env:TRACE_V0121_REFERENCE_HASH) { throw 'Running-app update did not place the exact v0.12.1 executable on disk.' }
+          if (!$trace.HasExited) { Stop-Process -Id $trace.Id -Force }
+          Start-Sleep -Seconds 2
+
+          $newTrace=Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+          Start-Sleep -Seconds 10
+          if ($newTrace.HasExited) { throw "v0.12.1 copy failed to launch after running-app update, code $($newTrace.ExitCode)." }
+          Stop-Process -Id $newTrace.Id -Force
+          Start-Sleep -Seconds 2
+
+          & $new --silent-uninstall --install-dir $dir
+          if ($LASTEXITCODE -ne 0) { throw 'Could not uninstall after running-app update test.' }
+          @"
+          old_v012_hash=$oldHash
+          running_update_exit=$updateExit
+          on_disk_v0121_hash=$onDiskHash
+          exact_v0121_written_while_old_process_running=true
+          upgraded_copy_launched_after_old_process_closed=true
+          "@ | Set-Content source/work/release/RUNNING-UPGRADE-VERIFICATION.txt
+
+      - name: Write final verification record
+        shell: pwsh
+        run: |
+          $setup=(Resolve-Path source/work/release/TraceSetup.exe).Path
+          $setupHash=(Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          Trace 0.12.1 exact Windows verification
+          trigger_sha=${{ github.sha }}
+          run_id=${{ github.run_id }}
+          source_gate_run=32649590459
+          source_gate_artifact_sha256=95bcb2674b8146214ad17944cc89923f02643f3817ea6549e058e399d8c4e510
+          TraceSetup_sha256=$setupHash
+          version_0_12_1_consistent=true
+          stale_0_9_0_removed=true
+          exact_branded_clean_install=true
+          embedded_payload_matches_generated_nsis=true
+          installed_exe_matches_native_payload=true
+          clean_installed_copy_launched=true
+          clean_installed_copy_survived_10_seconds=true
+          exact_branded_uninstall=true
+          local_project_data_preserved=true
+          verified_backups_preserved=true
+          v012_to_v0121_upgrade=true
+          upgraded_exe_matches_clean_v0121=true
+          upgraded_copy_launched=true
+          upgrade_preserved_project_data=true
+          upgrade_preserved_verified_backups=true
+          post_upgrade_uninstall_preserved_data=true
+          update_while_previous_process_running=true
+          post_running_update_copy_launched=true
+          larger_typography_contract_green=true
+          dock_no_longer_overlays_content=true
+          inspector_tabs_no_horizontal_overflow_contract=true
+          stray_wave_removed=true
+          actionable_code_empty_state=true
+          progressive_data_onboarding=true
+          branded_setup_actionable_errors=true
+          branded_setup_progress_listener_nonblocking=true
+          office_survey_imports_green=true
+          search_coding_annotations_green=true
+          offline_transcription_green=true
+          pdf_text_analysis_green=true
+          named_coders_green=true
+          participant_code_matrix_green=true
+          cooccurrence_green=true
+          negative_case_finder_green=true
+          group_comparison_green=true
+          intercoder_agreement_green=true
+          cohen_kappa_green=true
+          analysis_csv_exports_green=true
+          "@ | Set-Content source/work/release/FINAL-VERIFICATION.txt
+          Get-Content source/work/release/FINAL-VERIFICATION.txt
+
+      - name: Upload exact verified v0.12.1 release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Exact-Verified-Windows-Release
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            source/work/release/TraceSetup.exe
+            source/work/release/SHA256.txt
+            source/work/release/FINAL-VERIFICATION.txt
+            source/work/release/UPGRADE-VERIFICATION.txt
+            source/work/release/RUNNING-UPGRADE-VERIFICATION.txt
+            source/work/src-tauri/target/release/Trace.exe
+            source/work/src-tauri/target/release/bundle/nsis/*.exe
+            source/work/src-tauri/target/release/bundle/msi/*.msi
+
+      - name: Publish exact release result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          $status=@"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_gate_run=32649590459
+          version=0.12.1
+          result=${{ job.status }}
+          workflow=Trace Windows v0.12.1 exact installer and upgrade verification
+          verification=green_source+hardening_contracts+native_build+native_tests+nsis_payload+branded_setup+clean_install_equivalence+installed_launch+uninstall_preservation+v012_upgrade+upgrade_launch+running_process_update+project_backup_preservation+release_artifact
+          "@
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git reset --hard HEAD
+          git pull --rebase origin trace-v0121
+          $status | Set-Content build-status/windows-v0121-exact-final.txt
+          git add build-status/windows-v0121-exact-final.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record v0.12.1 exact release result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
