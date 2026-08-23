@@ -1,0 +1,5 @@
+source_gate_run=32649590459
+source_gate_result=success
+source_gate_artifact=Trace-v0.12.1-Hardening-Green-Source
+source_gate_artifact_sha256=95bcb2674b8146214ad17944cc89923f02643f3817ea6549e058e399d8c4e510
+version=0.12.1
