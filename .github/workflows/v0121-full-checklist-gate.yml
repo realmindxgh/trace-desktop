@@ -1,0 +1,221 @@
+name: Trace v0.12.1 full checklist gate
+
+on:
+  push:
+    branches: [trace-v0121]
+    paths:
+      - '.github/workflows/v0121-full-checklist-gate.yml'
+      - 'bootstrap/v0121-full/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-v0121-full-checklist-gate
+  cancel-in-progress: true
+
+jobs:
+  full-checklist:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-v0121-full-target
+    steps:
+      - name: Checkout release control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Publish gate run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          base_source_run=32649590459
+          result=running
+          workflow=Trace v0.12.1 full checklist gate
+          "@ | Set-Content build-status/v0121-full-checklist-gate.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v0121-full-checklist-gate.txt
+          git commit -m 'ci: record full checklist gate run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download exact green v0.12.1 source
+        shell: pwsh
+        run: |
+          gh run download 32649590459 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12.1-Hardening-Green-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the exact green v0.12.1 source checkpoint.' }
+          foreach ($required in @('work/index.html','work/src/app.js','work/src/styles.css','work/src-tauri/Cargo.toml','work/setup-shell/src/app.js','work/setup-shell/src-tauri/src/main.rs')) {
+            if (!(Test-Path $required)) { throw "Base source is incomplete: $required" }
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reconstruct exact full-checklist source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/v0121-full/part*.bin | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Expected 4 reconstruction parts, found $($parts.Count)." }
+          $bundle=Join-Path $env:RUNNER_TEMP 'trace-v0121-full-scripts-tests.tar.xz'
+          $out=[IO.File]::Create($bundle)
+          try {
+            foreach ($part in $parts) {
+              $bytes=[IO.File]::ReadAllBytes($part.FullName)
+              $out.Write($bytes,0,$bytes.Length)
+            }
+          } finally { $out.Dispose() }
+          if ((Get-Item $bundle).Length -ne 12988) { throw "Reconstruction bundle size mismatch: $((Get-Item $bundle).Length)" }
+          $hash=(Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'b705289a277739d53e60d6ff3d58276b23910fe9cde2f3171ab2d8fe90120efa') { throw "Reconstruction bundle SHA mismatch: $hash" }
+          tar -xJf $bundle -C work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract full-checklist reconstruction bundle.' }
+          Push-Location work
+          python scripts/apply_full_checklist.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Application full-checklist transform failed.' }
+          python scripts/harden_setup_rust.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer hardening transform failed.' }
+          Pop-Location
+
+      - name: Full research and checklist contracts
+        shell: pwsh
+        working-directory: work
+        run: |
+          node --check src/app.js
+          node --check setup-shell/src/app.js
+          node tests/v12_analysis_math.mjs
+          python tests/schema_contract.py
+          python tests/v11_imports_display.py
+          python tests/v11_usability.py
+          python tests/v11_transcription.py
+          python tests/v11_pdf_text.py
+          python tests/v12_analysis.py
+          python tests/v0121_hardening.py
+          python tests/v0121_full_checklist.py
+          node tests/v0121_workload.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'A full-checklist source or workload contract failed.' }
+
+      - name: Build both frontends
+        shell: pwsh
+        working-directory: work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          Push-Location setup-shell
+          npm run build
+          $setupBuild=$LASTEXITCODE
+          Pop-Location
+          if ($setupBuild -ne 0) { throw 'Trace setup frontend build failed.' }
+
+      - name: Browser viewport and DPI matrix
+        shell: pwsh
+        working-directory: work
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Playwright.' }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Playwright Chromium.' }
+          $server=Start-Process -FilePath python -ArgumentList @('-m','http.server','4173','--bind','127.0.0.1') -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            node tests/v0121_layout.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Viewport/DPI layout matrix failed.' }
+          } finally {
+            if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          }
+
+      - name: Native Rust compile and unit tests
+        shell: pwsh
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native tests failed.' }
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null
+          [IO.File]::WriteAllBytes('setup-shell/src-tauri/payload/trace-payload.exe',[byte[]](0x4D,0x5A))
+          cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
+          $setupCheck=$LASTEXITCODE
+          if ($setupCheck -eq 0) { cargo test --manifest-path setup-shell/src-tauri/Cargo.toml; $setupTest=$LASTEXITCODE } else { $setupTest=1 }
+          Remove-Item setup-shell/src-tauri/payload/trace-payload.exe -Force
+          if ($setupCheck -ne 0) { throw 'Branded setup cargo check failed.' }
+          if ($setupTest -ne 0) { throw 'Branded setup repair/rollback unit tests failed.' }
+
+      - name: Upload full-checklist green source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Full-Checklist-Green-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            work/index.html
+            work/assets/**
+            work/package.json
+            work/package-lock.json
+            work/src/**
+            work/database/**
+            work/src-tauri/build.rs
+            work/src-tauri/Cargo.toml
+            work/src-tauri/Cargo.lock
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/src-tauri/icons/**
+            work/src-tauri/windows/**
+            work/setup-shell/index.html
+            work/setup-shell/assets/**
+            work/setup-shell/package.json
+            work/setup-shell/package-lock.json
+            work/setup-shell/scripts/**
+            work/setup-shell/src/**
+            work/setup-shell/src-tauri/build.rs
+            work/setup-shell/src-tauri/Cargo.toml
+            work/setup-shell/src-tauri/Cargo.lock
+            work/setup-shell/src-tauri/tauri.conf.json
+            work/setup-shell/src-tauri/src/**
+            work/setup-shell/src-tauri/icons/**
+            work/tests/**
+            work/scripts/**
+
+      - name: Publish gate result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin trace-v0121
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          base_source_run=32649590459
+          result=${{ job.status }}
+          workflow=Trace v0.12.1 full checklist gate
+          verification=reconstruction+carried_research_contracts+full_checklist_contract+10000_reference_workload+both_frontends+viewport_dpi_matrix+native_rust+setup_repair_rollback_tests
+          "@ | Set-Content build-status/v0121-full-checklist-gate.txt
+          git add build-status/v0121-full-checklist-gate.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record full checklist gate result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
