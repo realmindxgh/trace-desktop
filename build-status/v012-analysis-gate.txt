@@ -1,5 +1,5 @@
 run_id=32638051355
 run_number=5
 source_sha=16ee66c5af3c8258735da9e3d35f454ca64805b9
-result=running
+result=failure
 workflow=Trace v0.12 analysis and intercoder gate
