@@ -31,12 +31,10 @@ raw_nsis = '''  #[cfg(windows)]
   #[cfg(not(windows))]
   cmd.arg(format!("/D={target}"));'''
 
-if quoted_nsis in text:
+if raw_nsis not in text:
     if text.count(quoted_nsis) != 1:
-        raise SystemExit(f"Expected one quoted NSIS /D launch, found {text.count(quoted_nsis)}")
+        raise SystemExit(f"Expected one generated NSIS /D launch, found {text.count(quoted_nsis)}")
     text = text.replace(quoted_nsis, raw_nsis, 1)
-elif raw_nsis not in text:
-    raise SystemExit("Could not locate generated NSIS /D launch to harden")
 
 path.write_text(text, encoding="utf-8")
 
@@ -49,6 +47,7 @@ if windows_import not in check:
     raise SystemExit("Windows CommandExt import for raw NSIS /D argument was not written")
 if raw_nsis not in check:
     raise SystemExit("Raw Windows NSIS /D launch was not written")
-if quoted_nsis in check:
-    raise SystemExit("Quoted NSIS /D launch remains and would break custom paths containing spaces")
+# Exactly one ordinary .arg(/D=...) is expected: the cfg(not(windows)) fallback.
+if check.count(quoted_nsis) != 1:
+    raise SystemExit(f"Unexpected ordinary NSIS /D launch count after hardening: {check.count(quoted_nsis)}")
 print("v0.12.1 generated setup Rust syntax and NSIS custom-path handling repaired")
