@@ -1,0 +1,70 @@
+name: Trace v0.12.1 browser debug source
+
+on:
+  push:
+    branches: [trace-v0121]
+    paths:
+      - '.github/workflows/v0121-browser-debug.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  reconstruct:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+      - name: Download exact green base
+        shell: pwsh
+        run: |
+          gh run download 32649590459 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12.1-Hardening-Green-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download exact green base.' }
+      - name: Reconstruct exact current source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/v0121-full/part*.bin | Sort-Object Name
+          $bundle=Join-Path $env:RUNNER_TEMP 'base.tar.xz'
+          $out=[IO.File]::Create($bundle)
+          try { foreach($part in $parts){ $bytes=[IO.File]::ReadAllBytes($part.FullName); $out.Write($bytes,0,$bytes.Length) } } finally { $out.Dispose() }
+          if ((Get-Item $bundle).Length -ne 12988) { throw 'Base bundle size mismatch.' }
+          if ((Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'b705289a277739d53e60d6ff3d58276b23910fe9cde2f3171ab2d8fe90120efa') { throw 'Base bundle hash mismatch.' }
+          $fp=Get-ChildItem control/bootstrap/v0121-finalizer/part*.bin | Sort-Object Name
+          $fx=Join-Path $env:RUNNER_TEMP 'finalizer.py.xz'
+          $fo=[IO.File]::Create($fx)
+          try { foreach($part in $fp){ $bytes=[IO.File]::ReadAllBytes($part.FullName); $fo.Write($bytes,0,$bytes.Length) } } finally { $fo.Dispose() }
+          if ((Get-Item $fx).Length -ne 9288) { throw 'Finalizer bundle size mismatch.' }
+          if ((Get-FileHash $fx -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5f26a74248f9b7a8147f9c5f4922156bb36c5bebbd4f1c866780d0dce0ac1389') { throw 'Finalizer bundle hash mismatch.' }
+          tar -xJf $bundle -C work
+          $env:TRACE_FINALIZER_XZ=$fx
+          python -c "import os,lzma,pathlib; pathlib.Path('work/scripts/finalize_full_checklist.py').write_bytes(lzma.decompress(pathlib.Path(os.environ['TRACE_FINALIZER_XZ']).read_bytes()))"
+          Push-Location work
+          python scripts/apply_full_checklist.py
+          if ($LASTEXITCODE -ne 0) { throw 'Base full-checklist transform failed.' }
+          python scripts/harden_setup_rust.py
+          if ($LASTEXITCODE -ne 0) { throw 'Installer hardening transform failed.' }
+          python scripts/finalize_full_checklist.py
+          if ($LASTEXITCODE -ne 0) { throw 'Finalizer transform failed.' }
+          Pop-Location
+      - name: Upload exact browser debug source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Browser-Debug-Source
+          retention-days: 2
+          if-no-files-found: error
+          path: |
+            work/index.html
+            work/src/app.js
+            work/src/styles.css
+            work/tests/v0121_layout.mjs
+            work/setup-shell/index.html
+            work/setup-shell/src/app.js
+            work/setup-shell/src/styles.css
