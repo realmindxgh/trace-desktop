@@ -1,0 +1,8 @@
+Trace 0.12.1 exact installer maintenance diagnostic
+result=failure
+scenario=custom_path
+assertion=Custom-path install failed with exit code 1.
+completed_green=clean_install,closed_upgrade,running_process_block,running_retry,missing_exe_repair,missing_uninstaller_recovery
+run_id=32708595624
+run_attempt=2
+timestamp_utc=2026-08-24T11:28:24.5830775Z
