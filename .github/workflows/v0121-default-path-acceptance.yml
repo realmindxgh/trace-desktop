@@ -1,0 +1,155 @@
+name: Trace v0.12.1 exact default-path acceptance
+
+on:
+  push:
+    branches: [trace-v0121]
+    paths:
+      - 'release/v0121-default-path-go.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-v0121-default-path-acceptance
+  cancel-in-progress: true
+
+jobs:
+  accept:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FINAL_RELEASE_RUN: '32708595624'
+    steps:
+      - name: Checkout release control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Publish acceptance run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          trigger_sha=${{ github.sha }}
+          final_release_run=$env:FINAL_RELEASE_RUN
+          result=running
+          workflow=Trace v0.12.1 exact default-path acceptance
+          "@ | Set-Content build-status/v0121-default-path-acceptance.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v0121-default-path-acceptance.txt
+          git commit -m 'ci: record default-path acceptance run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download exact final v0.12.1 release candidate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path candidate | Out-Null
+          gh run download $env:FINAL_RELEASE_RUN --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12.1-Exact-Verified-Windows-Release' --dir candidate
+          if($LASTEXITCODE -ne 0){throw 'Could not download the exact final v0.12.1 release candidate.'}
+          foreach($required in @('candidate/release/TraceSetup.exe','candidate/release/SHA256.txt','candidate/release/FINAL-VERIFICATION.txt','candidate/src-tauri/target/release/Trace.exe')){
+            if(!(Test-Path $required)){throw "Final release artifact is incomplete: $required"}
+          }
+
+      - name: Download exact verified v0.12 predecessor
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path previous/v012 | Out-Null
+          gh run download 32639353769 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Exact-Verified-Windows-Release' --dir previous/v012
+          if($LASTEXITCODE -ne 0){throw 'Could not download exact verified v0.12 predecessor.'}
+          if(!(Test-Path 'previous/v012/release/TraceSetup.exe')){throw 'Verified v0.12 TraceSetup.exe is missing.'}
+
+      - name: Verify candidate identity and acceptance script
+        shell: pwsh
+        run: |
+          $line=(Get-Content candidate/release/SHA256.txt | Select-Object -First 1)
+          $expected=($line -split '\s+')[-1].ToLowerInvariant()
+          $actual=(Get-FileHash candidate/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($actual -ne $expected){throw 'TraceSetup.exe changed between final release and default-path acceptance.'}
+          $native=(Get-FileHash candidate/src-tauri/target/release/Trace.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $verification=Get-Content candidate/release/FINAL-VERIFICATION.txt -Raw
+          if($verification -notmatch 'installed_reference_Trace_exe_sha256=([0-9a-fA-F]{64})'){throw 'Final verification record does not contain the installed reference hash.'}
+          $reference=$Matches[1].ToLowerInvariant()
+          if($native -ne $reference){throw 'Native Trace.exe does not match the final installed-reference hash.'}
+          "TRACE_SETUP_ACCEPTANCE_HASH=$actual" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "TRACE_REFERENCE_HASH=$reference" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $tokens=$null;$errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'control/ci/v0121_default_path_probe.ps1'),[ref]$tokens,[ref]$errors) | Out-Null
+          if($errors.Count -gt 0){$errors | ForEach-Object {Write-Error $_.Message};throw 'Default-path acceptance script has a PowerShell parse error.'}
+
+      - name: Exercise exact candidate at real default install path
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          & control/ci/v0121_default_path_probe.ps1 `
+            -NewSetup candidate/release/TraceSetup.exe `
+            -OldSetup previous/v012/release/TraceSetup.exe `
+            -ReferenceHash $env:TRACE_REFERENCE_HASH `
+            -ReleaseDir candidate/release
+          if($LASTEXITCODE -ne 0){throw "Default-path acceptance failed with exit code $LASTEXITCODE."}
+          if(!(Test-Path candidate/release/DEFAULT-PATH-VERIFICATION.txt)){throw 'Default-path evidence file was not produced.'}
+          $after=(Get-FileHash candidate/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($after -ne $env:TRACE_SETUP_ACCEPTANCE_HASH){throw 'TraceSetup.exe changed while being acceptance-tested.'}
+
+      - name: Write exact default-path acceptance record
+        shell: pwsh
+        run: |
+          @"
+          Trace 0.12.1 exact default-path release acceptance
+          trigger_sha=${{ github.sha }}
+          run_id=${{ github.run_id }}
+          final_release_run=$env:FINAL_RELEASE_RUN
+          TraceSetup_sha256=$env:TRACE_SETUP_ACCEPTANCE_HASH
+          installed_reference_Trace_exe_sha256=$env:TRACE_REFERENCE_HASH
+          exact_final_candidate_reused_without_rebuild=true
+          localappdata_trace_v012_install_green=true
+          localappdata_trace_v012_to_v0121_upgrade_green=true
+          localappdata_trace_same_version_maintenance_green=true
+          localappdata_trace_upgraded_copy_launched=true
+          localappdata_trace_uninstall_green=true
+          research_project_data_preserved=true
+          verified_backups_preserved=true
+          "@ | Set-Content candidate/release/DEFAULT-PATH-ACCEPTANCE.txt
+          Get-Content candidate/release/DEFAULT-PATH-ACCEPTANCE.txt
+
+      - name: Upload default-path accepted exact release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Exact-Default-Path-Accepted-Windows-Release
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            candidate/release/**
+            candidate/src-tauri/target/release/Trace.exe
+            candidate/src-tauri/target/release/bundle/nsis/*.exe
+            candidate/src-tauri/target/release/bundle/msi/*.msi
+
+      - name: Publish acceptance result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git reset --hard HEAD
+          git pull --rebase origin trace-v0121
+          @"
+          run_id=${{ github.run_id }}
+          trigger_sha=${{ github.sha }}
+          final_release_run=$env:FINAL_RELEASE_RUN
+          result=${{ job.status }}
+          workflow=Trace v0.12.1 exact default-path acceptance
+          verification=exact_candidate_identity+localappdata_default_v012_install+v012_to_v0121_upgrade+same_version_maintenance+installed_launch+uninstall+research_data_preservation
+          "@ | Set-Content build-status/v0121-default-path-acceptance.txt
+          git add build-status/v0121-default-path-acceptance.txt
+          if(git status --porcelain){
+            git commit -m 'ci: record default-path acceptance result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
