@@ -14,9 +14,9 @@ Any agent making a material change must update this ledger before handoff.
 **Branch:** `trace-v0121`  
 **Version:** `0.12.1`  
 **Milestone:** Full v0.12.1 UX + Installer Hardening checklist  
-**Status:** **FULL CHECKLIST COMPLETION PASS IN PROGRESS**
+**Status:** **ENGINEERING CHECKLIST COMPLETE; PHYSICAL UAT REMAINS**
 
-The previously verified v0.12.1 Windows release remains an intermediate build. A new final installer will only be produced from a newly green full-checklist source checkpoint.
+The final v0.12.1 Windows verification has now passed. The prior intermediate installer is superseded by the exact final-v2 release artifact from run `32724433832`.
 
 ## Previously proven intermediate release
 
@@ -31,11 +31,11 @@ Intermediate Windows release:
 - artifact `Trace-v0.12.1-Exact-Verified-Windows-Release`
 - branded installer SHA-256 `8bdd651c64cb787cc0f0d6da3eb5331b0240d8b7c76a5bf8a29a371ad700c4f4`
 
-That build already proved clean install, installed-copy launch, uninstall preservation, real v0.12 -> v0.12.1 upgrade, and a running-process update scenario. It is superseded by the expanded checklist pass now underway.
+That build proved clean install, installed-copy launch, uninstall preservation, real v0.12 -> v0.12.1 upgrade, and a running-process update scenario. It is superseded by the final-v2 release below.
 
 ## Expanded full-checklist implementation
 
-The expanded source is reconstructed from the exact green v0.12.1 source artifact from run `32649590459`, then receives the committed full-checklist and installer-hardening transforms.
+The expanded source was reconstructed from the exact green v0.12.1 source artifact from run `32649590459`, then received the committed full-checklist and installer-hardening transforms.
 
 Implemented areas include:
 - persistent/resizable/collapsible Data and Inspector rails
@@ -108,23 +108,65 @@ Correction:
 - corrected raw finalizer: `32665` bytes, SHA-256 `ddda44167b37b0f090552885901031d67fcb8feca08cb2effa42fa3b9df631ef`
 - corrected compressed finalizer: `9288` bytes, SHA-256 `5f26a74248f9b7a8147f9c5f4922156bb36c5bebbd4f1c866780d0dce0ac1389`
 
-The corrected four-part bundle and workflow hash contract are being committed together before the next gate run.
+## Final full-checklist source gate
+
+Run `32723424461` completed successfully from source SHA `a5bdc5335264db679d8cc98abac5b73a18effb3d`.
+
+The green source gate proved:
+- all carried research and regression contracts
+- both frontends
+- the browser viewport/DPI matrix
+- native Rust compilation and unit tests
+- the NSIS custom-path raw-argument fix
+
+The exact source artifact was `Trace-v0.12.1-Full-Checklist-Green-Source` with digest `sha256:dad38e53e5149190d97c65762cb4362accc84467f38c1b59c2aa97216cca123e`.
+
+## Final Windows release verification
+
+Run `32724433832` completed successfully as `Trace Windows v0.12.1 exact final v2`.
+
+Final artifact:
+- `Trace-v0.12.1-Exact-Verified-Windows-Release`
+- artifact SHA-256 `233e76f199eb711f1de4fa02cc9cf95bdc3062e46e40cffa7239f06c921472f9`
+- artifact expires `2026-09-23`
+- final `TraceSetup.exe` SHA-256 `262186eea6ca1dc70c267ac81278cd0f77960e4a7525cc62b0d8ffbaeb0ba77d`
+
+The final-v2 workflow passed all of these gates:
+- exact full-checklist source reconstruction
+- carried research contracts
+- native Trace compile and tests
+- setup-shell compile and tests
+- generated native NSIS payload equivalence
+- exact branded clean installation
+- installed executable hash equivalence with the native reference
+- installed-copy launch and survival test
+- clean uninstall
+- closed v0.12 -> v0.12.1 upgrade
+- upgraded-copy hash and launch verification
+- safe running-process update block with old executable preservation
+- successful retry after closing Trace
+- same-version missing-EXE repair
+- missing-uninstaller recovery
+- custom install path containing spaces
+- custom-path maintenance and uninstall
+- forced rollback with exact application-byte restoration
+- successful maintenance retry after rollback
+- research-project and verified-backup preservation through maintenance, rollback, and uninstall
+- version consistency and removal of stale `0.9.0`
+
+Maintenance matrix evidence recorded all scenarios as green.
+Rollback evidence recorded exact application-byte restoration and successful post-rollback maintenance.
 
 ## Release rule
 
-Do not hand the prior installer to the user as the final checklist-complete release.
-
-A new final EXE is allowed only after:
-- the full source/contracts/browser/DPI/Rust gate is green
-- the expanded Windows maintenance matrix is green
-- carried research features remain green
-- exact native build/install/upgrade/repair/rollback/uninstall verification passes
-- `docs/v0121-checklist-status.md` and this ledger contain final evidence
+The engineering definition of done for v0.12.1 is now satisfied. The final installer is the artifact from run `32724433832`, not the earlier intermediate release.
 
 ## Physical UAT boundary
 
-Physical inspection on the user's own Windows display cannot be simulated by CI. After engineering gates are complete, the final installer still requires a short physical UAT pass for the installer and Data/Code/Themes/Analyse/Write workspaces at the user's actual scaling.
+Physical inspection on the user's own Windows display cannot be simulated by CI. The only remaining acceptance item is a short real-machine UAT pass for the installer and Data/Code/Themes/Analyse/Write workspaces at the user's actual Windows scaling and display conditions.
 
-## Exact next continuation point
+Until that physical pass is performed, v0.12.1 should be described as **engineering-complete and awaiting physical UAT**, not as fully UAT-complete.
 
-Commit the corrected four-part finalizer bundle plus updated workflow integrity constants, rerun the full Windows gate, fix any browser/DPI or Rust failure it exposes, then use only the resulting green source artifact for the expanded maintenance matrix and new exact final Windows release.
+## Continuation point
+
+No further engineering gate is required before physical UAT. Use the final artifact from run `32724433832` for the real-machine acceptance pass. If physical UAT reveals a defect, return to the affected checklist item, patch from the verified `trace-v0121` source lineage, and rerun the relevant source and Windows release gates before replacing the final artifact.
