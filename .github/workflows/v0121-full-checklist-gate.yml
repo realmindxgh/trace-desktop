@@ -7,6 +7,7 @@ on:
       - '.github/workflows/v0121-full-checklist-gate.yml'
       - 'bootstrap/v0121-full/**'
       - 'bootstrap/v0121-finalizer/**'
+      - 'ci/v0121_layout_fix.py'
   workflow_dispatch:
 
 permissions:
@@ -121,6 +122,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer hardening transform failed.' }
           python scripts/finalize_full_checklist.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Final full-checklist transform failed.' }
+          python ../control/ci/v0121_layout_fix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Browser geometry transform failed.' }
           Pop-Location
 
       - name: Full research and checklist contracts
