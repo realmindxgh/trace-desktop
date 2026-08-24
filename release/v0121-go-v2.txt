@@ -1,0 +1,10 @@
+source_gate_run=32723424461
+source_gate_result=success
+source_gate_sha=a5bdc5335264db679d8cc98abac5b73a18effb3d
+source_gate_artifact=Trace-v0.12.1-Full-Checklist-Green-Source
+source_gate_artifact_sha256=sha256:dad38e53e5149190d97c65762cb4362accc84467f38c1b59c2aa97216cca123e
+source_gate_browser_matrix=9_display_cases_x_5_workspaces_plus_5_installer_states
+source_gate_native_rust=green
+source_gate_setup_rust=green
+nsis_custom_path_raw_argument_fix=green
+version=0.12.1
