@@ -10,15 +10,15 @@ Any agent making a material change must update this ledger before handoff.
 
 ## Current snapshot
 
-**Date:** 2026-08-23  
+**Date:** 2026-08-24  
 **Branch:** `trace-v0121`  
 **Version:** `0.12.1`  
 **Milestone:** Full v0.12.1 UX + Installer Hardening checklist  
 **Status:** **FULL CHECKLIST COMPLETION PASS IN PROGRESS**
 
-The previously verified v0.12.1 Windows release is now an **intermediate build**, not the final deliverable, because the user explicitly required every implementable item in `AGENTS.md` to be completed before the final EXE is produced.
+The previously verified v0.12.1 Windows release is an **intermediate build**, not the final deliverable. The user requires every implementable item in `AGENTS.md` to be completed before the final EXE is produced.
 
-The only checklist category that cannot be truthfully completed by CI is physical visual/UAT inspection on the user's own Windows display. Everything else remains in scope for implementation and automated/native verification.
+The only category that cannot be truthfully completed in CI is physical visual/UAT inspection on the user's own Windows display. Everything else remains in scope for implementation and automated/native verification.
 
 ## Previously proven intermediate release
 
@@ -37,60 +37,69 @@ Intermediate Windows release:
 - artifact digest `d11cc13472fbd7168d7bd06d231633506624754a88d480daac58306316ec59c0`
 - branded installer SHA-256 `8bdd651c64cb787cc0f0d6da3eb5331b0240d8b7c76a5bf8a29a371ad700c4f4`
 
-That build already proved clean install, installed-copy launch, uninstall preservation, real v0.12 -> v0.12.1 upgrade, and a running-process update scenario. It remains valuable evidence, but it is superseded by the current full-checklist pass.
+That build proved clean install, installed-copy launch, uninstall preservation, real v0.12 -> v0.12.1 upgrade, and the earlier running-process update scenario. It remains evidence only and is superseded by the current full-checklist pass.
 
-## Full-checklist implementation tranche: implemented locally, Windows gate pending
+## Full-checklist implementation currently in source reconstruction
 
-The current expanded source is based directly on the exact green source artifact from run `32649590459`. All carried Python/JavaScript research contracts are still green locally after the following additions.
+The expanded source is reconstructed from the exact green artifact from run `32649590459`, rather than from an arbitrarily mutated local tree.
+
+Implemented and locally verified additions include:
 
 ### Code workspace and panel behavior
 - persistent left Data rail width
 - persistent right Inspector width
-- left/right drag resize handles
+- drag and keyboard resizing with bounded widths
 - collapse/restore controls for both panels
 - remembered transcript scroll position per source
-- no-source and no-search-match states remain distinct
+- distinct no-source and no-search-match states
 
 ### Data/import UX
 - multi-file import
-- drag-and-drop import zone
+- visible drag-and-drop import zone
 - visible import queue
-- per-file queued/working/success/error/skipped states
-- isolated failures so one bad file does not invalidate unrelated valid files
+- per-file queued/working/success/error/skipped results
+- isolated failures so one bad file does not invalidate unrelated files
 - duplicate-source handling before import
 - source originals remain untouched
 
 ### Themes / Analyse / Write
-- theme evidence inspection from theme cards
-- stronger Analyse status and matrix behavior
-- sticky matrix headers/identifier column for large matrices
+- searchable Themes workspace
+- searchable Analyse evidence
+- `buildAnalysisIndex()` for large-project summary/matrix work
+- theme evidence inspection
+- sticky matrix headers and identifier column
+- bounded evidence results
 - Write autosave scheduling
-- visible save/save-failure status
+- visible save and save-failure state
 - improved zero-content guidance
 
 ### Search, dialogs and accessibility
-- context-aware Ctrl/Cmd+F behavior
+- context-aware Ctrl/Cmd+F
 - modal focus trapping
 - Escape handling where safe
-- restored visible keyboard focus treatment
+- visible keyboard focus
+- keyboard-accessible splitters
 - larger pointer targets
 - reduced-motion support
-- responsive breakpoints for narrow desktop windows
-- residual literal sub-12px meaningful CSS sizes raised to the minimum readability floor
+- responsive breakpoints
+- literal meaningful CSS sizes below 12 px raised to the readability floor
 
 ### Installer/maintenance hardening
-- preflight detects a running `Trace.exe`
-- update is blocked while Trace is running, with save/close/recheck guidance
+- running `Trace.exe` detection
+- update blocked while Trace is running, with save/close/recheck guidance
 - target writeability probe
-- partial installation detection using executable/uninstaller state
-- repair mode for incomplete application installations
+- partial-install detection
+- installed-version detection
+- repair mode
 - application-file snapshot before update/repair
-- rollback helper that excludes `Projects`, `Backups`, and `Installer` research-data areas
-- rollback restoration tests for application binaries
+- rollback helper excluding `Projects`, `Backups`, and `Installer`
+- deterministic forced-rollback CI hook
+- shared `perform_install` / `perform_uninstall` core so interactive GUI and silent verification do not prove separate installer paths
+- rollback restoration and data-exclusion unit tests
 - bounded uninstall cleanup verification
 
-### Local verification after this tranche
-Green locally:
+### Expanded local contracts
+Green locally before the current Windows rerun:
 - application JS syntax
 - setup-shell JS syntax
 - schema contract
@@ -98,28 +107,53 @@ Green locally:
 - usability regression
 - transcription regression
 - PDF regression
-- v0.12 analysis/intercoder contract
-- Cohen kappa mathematics fixture
-- existing v0.12.1 hardening contract
+- v0.12 analysis/intercoder regression
+- Cohen kappa mathematics
+- original v0.12.1 hardening contract
+- new `v0121_full_checklist.py`
+- 10,000-coding-reference workload/indexing test
+- root frontend build
+- setup-shell frontend build
 
-Rust compilation of the newest installer changes is **not yet claimed**. It must pass the next Windows source gate.
+Rust compilation of the newest installer core remains a Windows-gate claim only.
 
-## Current technical work
+## First full-checklist Windows gate
 
-The current task is to finish and verify the remaining automated checklist categories:
+Run `32665034064` / job `97257005294` completed with **failure**.
 
-1. add full-checklist static/regression contract;
-2. add research-sized workload/performance contract;
-3. standardize search in Themes and Analyse;
-4. finish modal/menu viewport handling and save/recovery assertions;
-5. add browser-driven layout/visual regression across the required viewport and DPI matrix;
-6. add installer browser fixtures for fresh, maintenance, repair, running-app, and error states;
-7. refactor branded setup silent verification so CI and GUI share the same core install/uninstall logic;
-8. expand Windows maintenance matrix for same-version repair, missing application file, partial metadata, custom path, running-app block/retry, and forced rollback preservation;
-9. run a new Windows full-checklist source gate;
-10. fix every gate failure;
-11. update this ledger and checklist tracker with the exact run/artifact evidence;
-12. build a completely new final `TraceSetup.exe` only from that new green checkpoint.
+What passed:
+- exact previous green source retrieval
+- reconstruction bundle integrity
+- reconstruction execution
+- application/setup JS syntax
+- carried schema/import/usability/transcription/PDF/analysis/intercoder/kappa regressions
+- original v0.12.1 hardening contract
+
+What failed:
+- new full-checklist contract reported missing `themeSearch`
+- workload contract reported missing `buildAnalysisIndex`
+
+The failure identified a **reconstruction packaging gap**, not a carried research regression. The later local changes existed outside the canonical transformation and therefore were correctly rejected by CI. Frontend builds, browser/DPI tests, Rust tests and artifact promotion were skipped after the contract failure.
+
+The run's failure is preserved in `build-status/v0121-full-checklist-gate.txt`; it is not hidden or overwritten as success.
+
+## Correction after run 32665034064
+
+A once-only readable finalizer was created and committed as:
+
+- `ci/v0121_finalize_full_checklist.py`
+- SHA-256 `e43aba18ced41485e3303a14f40d5fefe8cb9a4b903732b7214d097896a3d0ca`
+- source commit `b04b05b2453b05f934a3afda6242939dfb958d38`
+
+It closes the missing canonical reconstruction gaps, including Themes/Analyse search, indexed analysis, Data drop-zone rendering, accessibility/responsive CSS, setup browser fixtures, installed-version reporting, shared setup core, and deterministic rollback verification.
+
+The Windows gate was updated at commit `aa8c4ea7492b629da8c4e526472bfa76eefbf6d0` to:
+- enforce the finalizer SHA before execution;
+- run the finalizer after the two original reconstruction transforms;
+- fail immediately on the first individual source/regression contract failure;
+- continue to require both frontend builds, browser viewport/DPI matrix, main Rust tests, and setup repair/rollback Rust tests before source promotion.
+
+A replacement Windows full-checklist gate is now the active checkpoint.
 
 ## Release rule
 
@@ -127,16 +161,17 @@ Do **not** hand the prior installer to the user as the final checklist-complete 
 
 A new final EXE is allowed only after:
 - all implementable `AGENTS.md` items are green or concretely verified;
-- the expanded Windows maintenance matrix passes;
+- the full Windows source/checklist gate is green;
 - browser/DPI/layout regression passes;
+- the expanded Windows maintenance matrix passes;
 - carried research features remain green;
 - exact native build/install/upgrade/repair/rollback/uninstall verification passes;
-- `docs/v0121-checklist-status.md` and this ledger are updated with final evidence.
+- `docs/v0121-checklist-status.md` and this ledger contain the final evidence.
 
 ## Physical UAT boundary
 
-After the engineering checklist is complete, the final EXE can be produced. The remaining physical-machine visual check must be clearly labeled as physical UAT rather than silently simulated. It should inspect the real installer and Data/Code/Themes/Analyse/Write workspaces at the user's actual Windows scaling.
+After engineering completion, the final EXE can be produced. Physical visual inspection on the user's actual Windows display must remain labeled **PHYSICAL UAT** rather than being simulated or falsely checked off.
 
 ## Exact next continuation point
 
-Continue from the exact green v0.12.1 source artifact, finish the expanded automated contracts and installer-core refactor, package the source reproducibly into the repo, and launch the new Windows full-checklist gate.
+Follow the replacement full-checklist Windows gate triggered from `aa8c4ea7492b629da8c4e526472bfa76eefbf6d0`. Fix any frontend/browser/Rust failure it exposes. Once that gate is green, record its artifact/run evidence here and move directly to the expanded exact-installer maintenance matrix and final Windows release build.
