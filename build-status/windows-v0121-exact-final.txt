@@ -3,5 +3,6 @@ run_number=2
 trigger_sha=2e067b354093e06b321ce9b81fa5e9ff3a370dc1
 source_gate_run=32707560601
 version=0.12.1
-result=running
+result=failure
 workflow=Trace Windows v0.12.1 exact installer and maintenance verification
+verification=full_checklist_source+native_build_tests+nsis_payload+branded_setup+clean_install+installed_launch+uninstall_preservation+v012_upgrade+running_process_block_retry+missing_exe_repair+missing_uninstaller_recovery+custom_path+forced_rollback+research_data_preservation+release_artifact
