@@ -11,8 +11,59 @@ $NewSetup = (Resolve-Path $NewSetup).Path
 $OldSetup = (Resolve-Path $OldSetup).Path
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
 
+$currentScenario = 'initialization'
+$diagnosticPath = Join-Path $ReleaseDir 'MAINTENANCE-DIAGNOSTICS.txt'
+$diagnosticWritten = $false
+$records = [ordered]@{}
+
+function Write-MatrixFailure([string]$Message){
+  if($script:diagnosticWritten){ return }
+  $script:diagnosticWritten = $true
+  $safeMessage = ($Message -replace '[\r\n]+',' ').Trim()
+  $completed = @($script:records.Keys | Where-Object { $script:records[$_] -eq 'green' }) -join ','
+  @(
+    'Trace 0.12.1 exact installer maintenance diagnostic',
+    'result=failure',
+    "scenario=$script:currentScenario",
+    "assertion=$safeMessage",
+    "completed_green=$completed",
+    "run_id=$env:GITHUB_RUN_ID",
+    "run_attempt=$env:GITHUB_RUN_ATTEMPT",
+    "timestamp_utc=$([DateTime]::UtcNow.ToString('o'))"
+  ) | Set-Content $script:diagnosticPath
+  Write-Host "TRACE_MAINTENANCE_FAILURE scenario=$script:currentScenario assertion=$safeMessage"
+  Get-Content $script:diagnosticPath | ForEach-Object { Write-Host $_ }
+
+  # Persist only sanitized CI metadata. Never write research content into the repository.
+  try {
+    $controlRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    $statusDir = Join-Path $controlRoot 'build-status'
+    New-Item -ItemType Directory -Force -Path $statusDir | Out-Null
+    $statusPath = Join-Path $statusDir 'windows-v0121-maintenance-diagnostic.txt'
+    Copy-Item $script:diagnosticPath $statusPath -Force
+    Push-Location $controlRoot
+    try {
+      git config user.name 'trace-build-bot'
+      git config user.email 'actions@users.noreply.github.com'
+      git add build-status/windows-v0121-maintenance-diagnostic.txt
+      if(git status --porcelain -- build-status/windows-v0121-maintenance-diagnostic.txt){
+        git commit -m 'ci: record v0.12.1 maintenance failure diagnostic [skip ci]'
+        git pull --rebase origin trace-v0121
+        git push origin HEAD:trace-v0121
+      }
+    } finally {
+      Pop-Location
+    }
+  } catch {
+    Write-Warning "Could not persist maintenance diagnostic to build-status: $($_.Exception.Message)"
+  }
+}
+
 function Assert-True([bool]$Condition,[string]$Message){
-  if(-not $Condition){ throw $Message }
+  if(-not $Condition){
+    Write-MatrixFailure $Message
+    throw $Message
+  }
 }
 
 function Invoke-TraceSetup([string]$Setup,[string[]]$Arguments){
@@ -52,14 +103,17 @@ function Assert-Sentinels($Sentinels,[string]$Scenario){
 function Launch-And-Prove([string]$Exe,[string]$WorkingDir,[string]$Scenario){
   $p=Start-Process -FilePath $Exe -WorkingDirectory $WorkingDir -PassThru
   Start-Sleep -Seconds 10
-  if($p.HasExited){ throw "$Scenario installed copy exited unexpectedly with code $($p.ExitCode)." }
+  if($p.HasExited){
+    $message="$Scenario installed copy exited unexpectedly with code $($p.ExitCode)."
+    Write-MatrixFailure $message
+    throw $message
+  }
   Stop-Process -Id $p.Id -Force
   Start-Sleep -Seconds 2
 }
 
-$records = [ordered]@{}
-
 # 1. Exact clean install, launch, uninstall, preservation.
+$currentScenario='clean_install'
 $dir=Fresh-Dir 'TraceV0121Matrix-Clean'
 $sentinels=New-ResearchSentinels 'clean'
 $exit=Invoke-TraceSetup $NewSetup @('--silent-install','--install-dir',$dir)
@@ -78,6 +132,7 @@ $records.clean_install='green'
 $records.clean_install_hash=$hash
 
 # 2. Real exact v0.12 -> v0.12.1 closed-app upgrade.
+$currentScenario='closed_upgrade'
 $dir=Fresh-Dir 'TraceV0121Matrix-Upgrade'
 $exit=Invoke-TraceSetup $OldSetup @('--silent-install','--install-dir',$dir)
 Assert-True ($exit -eq 0) "Verified v0.12 install failed with exit code $exit."
@@ -102,6 +157,7 @@ $records.previous_v012_hash=$oldHash
 $records.upgraded_v0121_hash=$newHash
 
 # 3. Running old process must block safely, preserve old bytes, then succeed after close/retry.
+$currentScenario='running_process_block_retry'
 $dir=Fresh-Dir 'TraceV0121Matrix-Running'
 $exit=Invoke-TraceSetup $OldSetup @('--silent-install','--install-dir',$dir)
 Assert-True ($exit -eq 0) "Could not install v0.12 for running-process test; exit $exit."
@@ -133,6 +189,7 @@ $records.running_block_exit=$blockedExit
 $records.running_retry='green'
 
 # 4. Same-version repair / partial install with missing executable.
+$currentScenario='missing_exe_repair'
 $dir=Fresh-Dir 'TraceV0121Matrix-MissingExe'
 $exit=Invoke-TraceSetup $NewSetup @('--silent-install','--install-dir',$dir)
 Assert-True ($exit -eq 0) "Initial v0.12.1 install for repair failed with exit code $exit."
@@ -152,6 +209,7 @@ Assert-Sentinels $sentinels 'Uninstall after missing-EXE repair'
 $records.missing_exe_repair='green'
 
 # 5. Partial install with missing uninstaller should recover without touching research data.
+$currentScenario='missing_uninstaller_recovery'
 $dir=Fresh-Dir 'TraceV0121Matrix-MissingUninstaller'
 $exit=Invoke-TraceSetup $NewSetup @('--silent-install','--install-dir',$dir)
 Assert-True ($exit -eq 0) "Initial v0.12.1 install for uninstaller recovery failed with exit code $exit."
@@ -173,6 +231,7 @@ Assert-Sentinels $sentinels 'Uninstall after missing-uninstaller recovery'
 $records.missing_uninstaller_recovery='green'
 
 # 6. Custom install location, including spaces, must remain maintainable.
+$currentScenario='custom_path'
 $dir=Fresh-Dir 'Trace v0.12.1 Custom Install Path'
 $sentinels=New-ResearchSentinels 'custom-path'
 $exit=Invoke-TraceSetup $NewSetup @('--silent-install','--install-dir',$dir)
@@ -192,6 +251,7 @@ Assert-True (!(Test-Path $exe)) 'Custom-path uninstall left Trace.exe behind.'
 Assert-Sentinels $sentinels 'Custom-path uninstall'
 $records.custom_path='green'
 
+$currentScenario='complete'
 $recordPath=Join-Path $ReleaseDir 'MAINTENANCE-MATRIX.txt'
 @(
   'Trace 0.12.1 exact installer maintenance matrix',
