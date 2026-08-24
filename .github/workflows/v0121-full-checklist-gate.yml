@@ -101,18 +101,18 @@ jobs:
               $finalizerOut.Write($bytes,0,$bytes.Length)
             }
           } finally { $finalizerOut.Dispose() }
-          if ((Get-Item $finalizerXz).Length -ne 9196) { throw "Finalizer xz size mismatch: $((Get-Item $finalizerXz).Length)" }
+          if ((Get-Item $finalizerXz).Length -ne 9288) { throw "Finalizer xz size mismatch: $((Get-Item $finalizerXz).Length)" }
           $finalizerXzHash=(Get-FileHash $finalizerXz -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($finalizerXzHash -ne '337a44758ddb1f2190bd7deba8db54b480d0f85100467977e91167fd59c255f9') { throw "Finalizer xz SHA mismatch: $finalizerXzHash" }
+          if ($finalizerXzHash -ne '5f26a74248f9b7a8147f9c5f4922156bb36c5bebbd4f1c866780d0dce0ac1389') { throw "Finalizer xz SHA mismatch: $finalizerXzHash" }
 
           tar -xJf $bundle -C work
           if ($LASTEXITCODE -ne 0) { throw 'Could not extract base full-checklist reconstruction bundle.' }
           $env:TRACE_FINALIZER_XZ=$finalizerXz
           python -c "import os,lzma,pathlib; src=pathlib.Path(os.environ['TRACE_FINALIZER_XZ']).read_bytes(); pathlib.Path('work/scripts/finalize_full_checklist.py').write_bytes(lzma.decompress(src))"
           if ($LASTEXITCODE -ne 0) { throw 'Could not decompress exact full-checklist finalizer.' }
-          if ((Get-Item work/scripts/finalize_full_checklist.py).Length -ne 32291) { throw "Finalizer raw size mismatch: $((Get-Item work/scripts/finalize_full_checklist.py).Length)" }
+          if ((Get-Item work/scripts/finalize_full_checklist.py).Length -ne 32665) { throw "Finalizer raw size mismatch: $((Get-Item work/scripts/finalize_full_checklist.py).Length)" }
           $finalizerRawHash=(Get-FileHash work/scripts/finalize_full_checklist.py -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($finalizerRawHash -ne 'e43aba18ced41485e3303a14f40d5fefe8cb9a4b903732b7214d097896a3d0ca') { throw "Finalizer raw SHA mismatch: $finalizerRawHash" }
+          if ($finalizerRawHash -ne 'ddda44167b37b0f090552885901031d67fcb8feca08cb2effa42fa3b9df631ef') { throw "Finalizer raw SHA mismatch: $finalizerRawHash" }
 
           Push-Location work
           python scripts/apply_full_checklist.py
