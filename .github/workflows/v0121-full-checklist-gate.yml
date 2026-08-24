@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/v0121-full-checklist-gate.yml'
       - 'bootstrap/v0121-full/**'
+      - 'ci/v0121_finalize_full_checklist.py'
   workflow_dispatch:
 
 permissions:
@@ -89,32 +90,40 @@ jobs:
           if ((Get-Item $bundle).Length -ne 12988) { throw "Reconstruction bundle size mismatch: $((Get-Item $bundle).Length)" }
           $hash=(Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne 'b705289a277739d53e60d6ff3d58276b23910fe9cde2f3171ab2d8fe90120efa') { throw "Reconstruction bundle SHA mismatch: $hash" }
+          $finalizerHash=(Get-FileHash control/ci/v0121_finalize_full_checklist.py -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($finalizerHash -ne 'e43aba18ced41485e3303a14f40d5fefe8cb9a4b903732b7214d097896a3d0ca') { throw "Finalizer SHA mismatch: $finalizerHash" }
           tar -xJf $bundle -C work
           if ($LASTEXITCODE -ne 0) { throw 'Could not extract full-checklist reconstruction bundle.' }
+          Copy-Item control/ci/v0121_finalize_full_checklist.py work/scripts/finalize_full_checklist.py -Force
           Push-Location work
           python scripts/apply_full_checklist.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Application full-checklist transform failed.' }
           python scripts/harden_setup_rust.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Installer hardening transform failed.' }
+          python scripts/finalize_full_checklist.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Final full-checklist transform failed.' }
           Pop-Location
 
       - name: Full research and checklist contracts
         shell: pwsh
         working-directory: work
         run: |
-          node --check src/app.js
-          node --check setup-shell/src/app.js
-          node tests/v12_analysis_math.mjs
-          python tests/schema_contract.py
-          python tests/v11_imports_display.py
-          python tests/v11_usability.py
-          python tests/v11_transcription.py
-          python tests/v11_pdf_text.py
-          python tests/v12_analysis.py
-          python tests/v0121_hardening.py
-          python tests/v0121_full_checklist.py
-          node tests/v0121_workload.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'A full-checklist source or workload contract failed.' }
+          function Invoke-Checked([string]$Label, [scriptblock]$Command) {
+            & $Command
+            if ($LASTEXITCODE -ne 0) { throw "$Label failed with exit code $LASTEXITCODE." }
+          }
+          Invoke-Checked 'Trace application JavaScript syntax' { node --check src/app.js }
+          Invoke-Checked 'Trace Setup JavaScript syntax' { node --check setup-shell/src/app.js }
+          Invoke-Checked 'v0.12 intercoder mathematics' { node tests/v12_analysis_math.mjs }
+          Invoke-Checked 'schema contract' { python tests/schema_contract.py }
+          Invoke-Checked 'Office/survey/display regression' { python tests/v11_imports_display.py }
+          Invoke-Checked 'usability regression' { python tests/v11_usability.py }
+          Invoke-Checked 'transcription regression' { python tests/v11_transcription.py }
+          Invoke-Checked 'PDF regression' { python tests/v11_pdf_text.py }
+          Invoke-Checked 'v0.12 analysis/intercoder regression' { python tests/v12_analysis.py }
+          Invoke-Checked 'v0.12.1 original hardening contract' { python tests/v0121_hardening.py }
+          Invoke-Checked 'v0.12.1 full checklist contract' { python tests/v0121_full_checklist.py }
+          Invoke-Checked '10,000-reference workload contract' { node tests/v0121_workload.mjs }
 
       - name: Build both frontends
         shell: pwsh
