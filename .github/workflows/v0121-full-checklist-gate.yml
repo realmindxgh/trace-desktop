@@ -90,8 +90,8 @@ jobs:
           if ((Get-Item $bundle).Length -ne 12988) { throw "Reconstruction bundle size mismatch: $((Get-Item $bundle).Length)" }
           $hash=(Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne 'b705289a277739d53e60d6ff3d58276b23910fe9cde2f3171ab2d8fe90120efa') { throw "Reconstruction bundle SHA mismatch: $hash" }
-          $finalizerHash=(Get-FileHash control/ci/v0121_finalize_full_checklist.py -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($finalizerHash -ne 'e43aba18ced41485e3303a14f40d5fefe8cb9a4b903732b7214d097896a3d0ca') { throw "Finalizer SHA mismatch: $finalizerHash" }
+          $finalizerBlob=(git -C control rev-parse HEAD:ci/v0121_finalize_full_checklist.py).Trim()
+          if ($finalizerBlob -ne 'f5327702c26e50f839648767da9bfb4d60e365e0') { throw "Finalizer Git blob mismatch: $finalizerBlob" }
           tar -xJf $bundle -C work
           if ($LASTEXITCODE -ne 0) { throw 'Could not extract full-checklist reconstruction bundle.' }
           Copy-Item control/ci/v0121_finalize_full_checklist.py work/scripts/finalize_full_checklist.py -Force
