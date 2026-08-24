@@ -66,20 +66,28 @@ if SETUP_MARKER not in setup:
 
 /* V0121_SETUP_DOCK_GEOMETRY_FIX */
 /* The setup stage and bottom controls are separate grid regions with a real
-   spacer row. Content scrolls inside the stage and can never sit under the dock. */
+   spacer row. The inner body row is explicitly shrinkable so long setup
+   content scrolls instead of expanding through the dock. */
 .setup-window{
   grid-template-rows:72px minmax(0,1fr) 12px 86px!important;
 }
 .setup-topbar{grid-row:1!important}
 .setup-body{
   grid-row:2!important;
+  grid-template-rows:minmax(0,1fr)!important;
   min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
   overflow:hidden!important;
 }
+.setup-rail,
 .setup-stage{
   min-height:0!important;
-  height:100%!important;
-  max-height:100%!important;
+  height:auto!important;
+  max-height:none!important;
+  align-self:stretch!important;
+}
+.setup-stage{
   overflow:auto!important;
   padding-bottom:24px!important;
 }
