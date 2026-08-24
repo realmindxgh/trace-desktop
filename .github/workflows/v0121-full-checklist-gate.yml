@@ -8,6 +8,7 @@ on:
       - 'bootstrap/v0121-full/**'
       - 'bootstrap/v0121-finalizer/**'
       - 'ci/v0121_layout_fix.py'
+      - 'ci/v0121_rust_fix.py'
   workflow_dispatch:
 
 permissions:
@@ -124,6 +125,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Final full-checklist transform failed.' }
           python ../control/ci/v0121_layout_fix.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Browser geometry transform failed.' }
+          python ../control/ci/v0121_rust_fix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Generated setup Rust correction failed.' }
           Pop-Location
 
       - name: Full research and checklist contracts
