@@ -16,8 +16,9 @@ function Assert-True([bool]$Condition,[string]$Message){
 }
 
 function Invoke-TraceSetup([string]$Setup,[string[]]$Arguments){
-  & $Setup @Arguments
-  return $LASTEXITCODE
+  & $Setup @Arguments | Out-Host
+  $code=$LASTEXITCODE
+  return $code
 }
 
 function File-Hash([string]$Path){
