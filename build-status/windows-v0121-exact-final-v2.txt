@@ -3,5 +3,5 @@ run_number=1
 trigger_sha=d150553c8cb4ac2328df0c4bd95fbaed1527f439
 source_gate_run=32723424461
 version=0.12.1
-result=running
+result=success
 workflow=Trace Windows v0.12.1 exact final v2
