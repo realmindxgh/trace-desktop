@@ -1,5 +1,8 @@
-source_gate_run=32649590459
+source_gate_run=32707560601
 source_gate_result=success
-source_gate_artifact=Trace-v0.12.1-Hardening-Green-Source
-source_gate_artifact_sha256=95bcb2674b8146214ad17944cc89923f02643f3817ea6549e058e399d8c4e510
+source_gate_artifact=Trace-v0.12.1-Full-Checklist-Green-Source
+source_gate_artifact_sha256=9d8ade643aab18a44ccdadb0b549dc6a1d031c557bcfed9a5e9156738f7d1b0d
+source_gate_browser_matrix=9_display_cases_x_5_workspaces_plus_5_installer_states
+source_gate_native_rust=green
+source_gate_setup_rust=green
 version=0.12.1
