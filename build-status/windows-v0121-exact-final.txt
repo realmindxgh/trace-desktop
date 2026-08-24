@@ -1,8 +1,7 @@
-run_id=32651178336
-run_number=1
-trigger_sha=69fd23c120f90106ac6b2b493327ca221c94a8f7
-source_gate_run=32649590459
+run_id=32708595624
+run_number=2
+trigger_sha=2e067b354093e06b321ce9b81fa5e9ff3a370dc1
+source_gate_run=32707560601
 version=0.12.1
-result=success
-workflow=Trace Windows v0.12.1 exact installer and upgrade verification
-verification=green_source+hardening_contracts+native_build+native_tests+nsis_payload+branded_setup+clean_install_equivalence+installed_launch+uninstall_preservation+v012_upgrade+upgrade_launch+running_process_update+project_backup_preservation+release_artifact
+result=running
+workflow=Trace Windows v0.12.1 exact installer and maintenance verification
