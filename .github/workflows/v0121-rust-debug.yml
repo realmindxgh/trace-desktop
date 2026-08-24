@@ -1,0 +1,84 @@
+name: Trace v0.12.1 hardened setup Rust snapshot
+
+on:
+  push:
+    branches: [trace-v0121]
+    paths:
+      - '.github/workflows/v0121-rust-debug.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  snapshot:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+      - name: Publish snapshot run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          source_sha=${{ github.sha }}
+          result=running
+          "@ | Set-Content build-status/v0121-rust-debug.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/v0121-rust-debug.txt
+          git commit -m 'ci: record Rust snapshot run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+      - name: Download exact hardening base
+        shell: pwsh
+        run: |
+          gh run download 32649590459 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12.1-Hardening-Green-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve exact base source.' }
+      - name: Reconstruct exact hardened source
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/v0121-full/part*.bin | Sort-Object Name
+          $bundle=Join-Path $env:RUNNER_TEMP 'full.tar.xz'
+          $out=[IO.File]::Create($bundle)
+          try { foreach($p in $parts){$b=[IO.File]::ReadAllBytes($p.FullName);$out.Write($b,0,$b.Length)} } finally {$out.Dispose()}
+          if ((Get-Item $bundle).Length -ne 12988) { throw 'Full bundle size mismatch.' }
+          if ((Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'b705289a277739d53e60d6ff3d58276b23910fe9cde2f3171ab2d8fe90120efa') { throw 'Full bundle hash mismatch.' }
+          $fp=Get-ChildItem control/bootstrap/v0121-finalizer/part*.bin | Sort-Object Name
+          $fx=Join-Path $env:RUNNER_TEMP 'finalizer.py.xz'
+          $fo=[IO.File]::Create($fx)
+          try { foreach($p in $fp){$b=[IO.File]::ReadAllBytes($p.FullName);$fo.Write($b,0,$b.Length)} } finally {$fo.Dispose()}
+          if ((Get-Item $fx).Length -ne 9288) { throw 'Finalizer size mismatch.' }
+          if ((Get-FileHash $fx -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5f26a74248f9b7a8147f9c5f4922156bb36c5bebbd4f1c866780d0dce0ac1389') { throw 'Finalizer hash mismatch.' }
+          tar -xJf $bundle -C work
+          $env:TRACE_FINALIZER_XZ=$fx
+          python -c "import os,lzma,pathlib; pathlib.Path('work/scripts/finalize_full_checklist.py').write_bytes(lzma.decompress(pathlib.Path(os.environ['TRACE_FINALIZER_XZ']).read_bytes()))"
+          Push-Location work
+          python scripts/apply_full_checklist.py
+          python scripts/harden_setup_rust.py
+          python scripts/finalize_full_checklist.py
+          python ../control/ci/v0121_layout_fix.py
+          python ../control/ci/v0121_rust_fix.py
+          Pop-Location
+          if ($LASTEXITCODE -ne 0) { throw 'Exact reconstruction failed.' }
+      - name: Upload exact setup Rust snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Hardened-Setup-Rust-Snapshot
+          retention-days: 2
+          if-no-files-found: error
+          path: |
+            work/setup-shell/src-tauri/src/main.rs
+            work/setup-shell/src-tauri/Cargo.toml
+            work/tests/v0121_full_checklist.py
+            work/scripts/harden_setup_rust.py
+            work/scripts/finalize_full_checklist.py
