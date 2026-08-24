@@ -2,5 +2,6 @@ run_id=32705629476
 run_number=7
 source_sha=17ece0757ce6c84e0182314a44178ff44cb21aca
 base_source_run=32649590459
-result=running
+result=failure
 workflow=Trace v0.12.1 full checklist gate
+verification=reconstruction+carried_research_contracts+full_checklist_contract+10000_reference_workload+both_frontends+viewport_dpi_matrix+native_rust+setup_repair_rollback_tests
