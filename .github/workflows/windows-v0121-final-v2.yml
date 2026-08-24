@@ -1,0 +1,331 @@
+name: Trace Windows v0.12.1 exact final v2
+
+on:
+  push:
+    branches:
+      - trace-v0121
+    paths:
+      - 'release/v0121-go-v2.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-windows-v0121-exact-final-v2
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_GATE_ARTIFACT: Trace-v0.12.1-Full-Checklist-Green-Source
+    steps:
+      - name: Checkout release control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-v0121
+          path: control
+
+      - name: Resolve exact green source pointer
+        shell: pwsh
+        run: |
+          $pointer='control/release/v0121-go-v2.txt'
+          if (!(Test-Path $pointer)) { throw 'v0.12.1 final-v2 source pointer is missing.' }
+          $kv=@{}
+          Get-Content $pointer | ForEach-Object {
+            if($_ -match '^([^=]+)=(.*)$'){ $kv[$matches[1]]=$matches[2] }
+          }
+          if($kv['source_gate_result'] -ne 'success'){ throw 'Source pointer is not green.' }
+          if($kv['version'] -ne '0.12.1'){ throw 'Source pointer version is not 0.12.1.' }
+          $run=[string]$kv['source_gate_run']
+          if($run -notmatch '^\d+$'){ throw 'Source pointer run ID is invalid.' }
+          "TRACE_SOURCE_GATE_RUN=$run" | Out-File $env:GITHUB_ENV -Append
+          "TRACE_SOURCE_GATE_SHA=$($kv['source_gate_sha'])" | Out-File $env:GITHUB_ENV -Append
+          "TRACE_SOURCE_ARTIFACT_DIGEST=$($kv['source_gate_artifact_sha256'])" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Publish final-v2 run ID
+        shell: pwsh
+        working-directory: control
+        run: |
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_gate_run=$env:TRACE_SOURCE_GATE_RUN
+          version=0.12.1
+          result=running
+          workflow=Trace Windows v0.12.1 exact final v2
+          "@ | Set-Content build-status/windows-v0121-exact-final-v2.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/windows-v0121-exact-final-v2.txt
+          git commit -m 'ci: record v0.12.1 final-v2 run [skip ci]'
+          git pull --rebase origin trace-v0121
+          git push origin HEAD:trace-v0121
+
+      - name: Download exact full-checklist green source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path source/work | Out-Null
+          gh run download $env:TRACE_SOURCE_GATE_RUN --repo $env:GITHUB_REPOSITORY --name $env:SOURCE_GATE_ARTIFACT --dir source/work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve exact green v0.12.1 source.' }
+          foreach ($required in @(
+            'source/work/index.html','source/work/src/app.js','source/work/src/styles.css',
+            'source/work/src-tauri/build.rs','source/work/src-tauri/Cargo.toml',
+            'source/work/setup-shell/index.html','source/work/setup-shell/src/app.js',
+            'source/work/setup-shell/src/styles.css','source/work/setup-shell/src-tauri/build.rs',
+            'source/work/setup-shell/src-tauri/Cargo.toml','source/work/setup-shell/src-tauri/src/main.rs',
+            'source/work/tests/v0121_hardening.py','source/work/tests/v0121_full_checklist.py',
+            'source/work/tests/v0121_layout.mjs','source/work/tests/v0121_workload.mjs'
+          )) { if(!(Test-Path $required)){ throw "Green source is incomplete: $required" } }
+          foreach ($file in @('source/work/package.json','source/work/src-tauri/tauri.conf.json','source/work/setup-shell/package.json','source/work/setup-shell/src-tauri/tauri.conf.json')) {
+            if ((Get-Content $file -Raw) -notmatch '"version"\s*:\s*"0\.12\.1"') { throw "$file is not Trace 0.12.1." }
+          }
+          $main=Get-Content source/work/setup-shell/src-tauri/src/main.rs -Raw
+          foreach($token in @('TRACE_SETUP_FORCE_ROLLBACK_TEST','partial_install','process_running','The previous application files were restored','repair','CommandExt','cmd.raw_arg(format!("/D={target}"))')) {
+            if(!$main.Contains($token)){ throw "Green source is missing installer hardening token: $token" }
+          }
+
+      - name: Download exact verified v0.12 release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path previous/v012 | Out-Null
+          gh run download 32639353769 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Exact-Verified-Windows-Release' --dir previous/v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve exact verified v0.12 release.' }
+          if (!(Test-Path 'previous/v012/release/TraceSetup.exe')) { throw 'Verified v0.12 TraceSetup.exe is missing.' }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate final verification scripts
+        shell: pwsh
+        run: |
+          foreach($script in @('control/ci/v0121_final_matrix.ps1','control/ci/v0121_rollback_probe.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script),[ref]$tokens,[ref]$errors) | Out-Null
+            if($errors.Count -gt 0){ $errors | ForEach-Object { Write-Error $_.Message }; throw "PowerShell parser rejected $script" }
+          }
+
+      - name: Add branded setup silent verification CLI
+        shell: pwsh
+        working-directory: source
+        run: |
+          python ../control/ci/add_trace_setup_cli.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not add TraceSetup verification CLI.' }
+          $main=Get-Content work/setup-shell/src-tauri/src/main.rs -Raw
+          foreach($token in @('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTALL_OK','perform_install(None','perform_uninstall(None','cmd.raw_arg(format!("/D={target}"))')){
+            if(!$main.Contains($token)){ throw "Verification source is missing token: $token" }
+          }
+
+      - name: Re-run full research contracts
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          function Invoke-Checked([string]$Label,[scriptblock]$Command){ & $Command; if($LASTEXITCODE -ne 0){ throw "$Label failed with exit code $LASTEXITCODE." } }
+          Invoke-Checked 'Trace JavaScript syntax' { node --check src/app.js }
+          Invoke-Checked 'Setup JavaScript syntax' { node --check setup-shell/src/app.js }
+          Invoke-Checked 'intercoder mathematics' { node tests/v12_analysis_math.mjs }
+          Invoke-Checked 'schema contract' { python tests/schema_contract.py }
+          Invoke-Checked 'Office/survey/display regression' { python tests/v11_imports_display.py }
+          Invoke-Checked 'usability regression' { python tests/v11_usability.py }
+          Invoke-Checked 'transcription regression' { python tests/v11_transcription.py }
+          Invoke-Checked 'PDF regression' { python tests/v11_pdf_text.py }
+          Invoke-Checked 'analysis/intercoder regression' { python tests/v12_analysis.py }
+          Invoke-Checked 'v0.12.1 hardening contract' { python tests/v0121_hardening.py }
+          Invoke-Checked 'v0.12.1 full checklist contract' { python tests/v0121_full_checklist.py }
+          Invoke-Checked '10,000-reference workload contract' { node tests/v0121_workload.mjs }
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Tauri CLI.' }
+
+      - name: Build and test native Trace v0.12.1
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo tests failed.' }
+          npx tauri build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native Windows bundle build failed.' }
+
+      - name: Stage exact native NSIS payload
+        shell: pwsh
+        run: |
+          $payload=Get-ChildItem source/work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if(!$payload){ throw 'Tauri NSIS payload not found.' }
+          New-Item -ItemType Directory -Force -Path source/work/setup-shell/src-tauri/payload | Out-Null
+          Copy-Item $payload.FullName source/work/setup-shell/src-tauri/payload/trace-payload.exe -Force
+          $bytes=[IO.File]::ReadAllBytes('source/work/setup-shell/src-tauri/payload/trace-payload.exe')
+          if($bytes.Length -lt 1MB -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A){ throw 'Embedded payload is not a credible PE executable.' }
+          $payloadHash=(Get-FileHash $payload.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $embeddedHash=(Get-FileHash source/work/setup-shell/src-tauri/payload/trace-payload.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($payloadHash -ne $embeddedHash){ throw 'Embedded payload differs from generated native NSIS.' }
+          "TRACE_V0121_NATIVE_NSIS_HASH=$payloadHash" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Build and test branded TraceSetup.exe
+        shell: pwsh
+        working-directory: source/work/setup-shell
+        run: |
+          npm install --no-save @tauri-apps/cli@2.11.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Tauri CLI for setup shell.' }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup frontend build failed.' }
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup unit tests failed.' }
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace setup release build failed.' }
+
+      - name: Assemble exact branded candidate
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path source/work/release | Out-Null
+          $setup='source/work/setup-shell/src-tauri/target/release/trace-setup.exe'
+          if(!(Test-Path $setup)){ throw 'Trace setup executable is missing.' }
+          Copy-Item $setup source/work/release/TraceSetup.exe -Force
+          $hash=(Get-FileHash source/work/release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_V0121_SETUP_HASH=$hash" | Out-File $env:GITHUB_ENV -Append
+          "TraceSetup.exe  $hash" | Set-Content source/work/release/SHA256.txt
+
+      - name: Establish native clean-install reference
+        shell: pwsh
+        run: |
+          $nativeSetup=(Get-ChildItem source/work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          $referenceDir=Join-Path $env:RUNNER_TEMP 'TraceNativeReferenceInstallV0121'
+          if(Test-Path $referenceDir){ Remove-Item $referenceDir -Recurse -Force }
+          $native=Start-Process -FilePath $nativeSetup -ArgumentList @('/S',"/D=$referenceDir") -Wait -PassThru
+          if($native.ExitCode -ne 0){ throw "Native reference install failed with exit code $($native.ExitCode)." }
+          $referenceTrace=Join-Path $referenceDir 'Trace.exe'
+          if(!(Test-Path $referenceTrace)){ throw 'Reference Trace.exe is missing.' }
+          $referenceHash=(Get-FileHash $referenceTrace -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_V0121_REFERENCE_HASH=$referenceHash" | Out-File $env:GITHUB_ENV -Append
+          $u=Get-ChildItem $referenceDir -Filter '*uninstall*.exe' -File | Select-Object -First 1
+          if(!$u){ throw 'Native reference uninstaller is missing.' }
+          $p=Start-Process -FilePath $u.FullName -ArgumentList '/S' -Wait -PassThru
+          if($p.ExitCode -ne 0){ throw "Native reference uninstall failed with exit code $($p.ExitCode)." }
+          Start-Sleep -Seconds 3
+
+      - name: Run exact branded maintenance matrix
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          & control/ci/v0121_final_matrix.ps1 -NewSetup source/work/release/TraceSetup.exe -OldSetup previous/v012/release/TraceSetup.exe -ReferenceHash $env:TRACE_V0121_REFERENCE_HASH -ReleaseDir source/work/release
+          if($LASTEXITCODE -ne 0){ throw "Exact branded maintenance matrix failed with exit code $LASTEXITCODE." }
+          if(!(Test-Path source/work/release/MAINTENANCE-MATRIX.txt)){ throw 'Maintenance matrix evidence was not produced.' }
+
+      - name: Run exact branded rollback verification
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          & control/ci/v0121_rollback_probe.ps1 -NewSetup source/work/release/TraceSetup.exe -ReferenceHash $env:TRACE_V0121_REFERENCE_HASH -ReleaseDir source/work/release
+          if($LASTEXITCODE -ne 0){ throw "Exact rollback verification failed with exit code $LASTEXITCODE." }
+          if(!(Test-Path source/work/release/ROLLBACK-VERIFICATION.txt)){ throw 'Rollback evidence was not produced.' }
+
+      - name: Write final verification record
+        shell: pwsh
+        run: |
+          $nativeExe=(Resolve-Path source/work/src-tauri/target/release/Trace.exe).Path
+          $nativeExeHash=(Get-FileHash $nativeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+          @"
+          Trace 0.12.1 exact Windows final-v2 verification
+          trigger_sha=${{ github.sha }}
+          run_id=${{ github.run_id }}
+          source_gate_run=$env:TRACE_SOURCE_GATE_RUN
+          source_gate_sha=$env:TRACE_SOURCE_GATE_SHA
+          source_gate_artifact=$env:SOURCE_GATE_ARTIFACT
+          source_gate_artifact_digest=$env:TRACE_SOURCE_ARTIFACT_DIGEST
+          TraceSetup_sha256=$env:TRACE_V0121_SETUP_HASH
+          native_Trace_exe_sha256=$nativeExeHash
+          native_NSIS_sha256=$env:TRACE_V0121_NATIVE_NSIS_HASH
+          installed_reference_Trace_exe_sha256=$env:TRACE_V0121_REFERENCE_HASH
+          exact_full_checklist_source=true
+          carried_research_contracts_green=true
+          native_trace_compile_tests_green=true
+          setup_repair_rollback_unit_tests_green=true
+          embedded_payload_matches_generated_nsis=true
+          nsis_custom_path_raw_argument_fix=true
+          exact_branded_clean_install=true
+          installed_exe_matches_native_reference=true
+          clean_installed_copy_launched=true
+          clean_installed_copy_survived_10_seconds=true
+          clean_uninstall_green=true
+          v012_to_v0121_closed_upgrade=true
+          upgraded_copy_matches_clean_v0121=true
+          upgraded_copy_launched=true
+          running_process_update_blocks_safely=true
+          running_process_block_preserves_old_exe=true
+          retry_after_close_updates_successfully=true
+          missing_exe_repair_green=true
+          missing_uninstaller_recovery_green=true
+          custom_path_install_maintenance_uninstall_green=true
+          forced_rollback_restores_exact_application_bytes=true
+          retry_after_rollback_green=true
+          research_project_data_preserved=true
+          verified_backups_preserved=true
+          version_0_12_1_consistent=true
+          stale_0_9_0_removed=true
+          v0121_release_acceptance=green
+          "@ | Set-Content source/work/release/FINAL-VERIFICATION.txt
+          Get-Content source/work/release/MAINTENANCE-MATRIX.txt
+          Get-Content source/work/release/ROLLBACK-VERIFICATION.txt
+          Get-Content source/work/release/FINAL-VERIFICATION.txt
+
+      - name: Upload exact verified v0.12.1 Windows release
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-v0.12.1-Exact-Verified-Windows-Release
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            source/work/release/TraceSetup.exe
+            source/work/release/SHA256.txt
+            source/work/release/MAINTENANCE-MATRIX.txt
+            source/work/release/ROLLBACK-VERIFICATION.txt
+            source/work/release/FINAL-VERIFICATION.txt
+
+      - name: Publish final-v2 result
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin trace-v0121
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          trigger_sha=${{ github.sha }}
+          source_gate_run=$env:TRACE_SOURCE_GATE_RUN
+          version=0.12.1
+          result=${{ job.status }}
+          workflow=Trace Windows v0.12.1 exact final v2
+          "@ | Set-Content build-status/windows-v0121-exact-final-v2.txt
+          git add build-status/windows-v0121-exact-final-v2.txt
+          if(git status --porcelain){
+            git commit -m 'ci: record v0.12.1 final-v2 result [skip ci]'
+            git push origin HEAD:trace-v0121
+          }
