@@ -3,6 +3,7 @@ import json
 
 baseline_path=Path('tests/ux_visual_baseline.json')
 script_path=Path('tests/ux_foundation_visual_regression.mjs')
+visual_path=Path('tests/ux_foundation_visuals.mjs')
 contract_path=Path('tests/ux_foundation_v2_contract.py')
 
 baseline={
@@ -28,64 +29,75 @@ baseline_path.write_text(json.dumps(baseline,indent=2)+'\n',encoding='utf-8')
 
 script_path.write_text(r'''import fs from 'node:fs';
 import path from 'node:path';
-import { PNG } from 'pngjs';
+import { chromium } from 'playwright';
 
 const root=path.resolve('test-artifacts/ux-visuals');
 const baseline=JSON.parse(fs.readFileSync(path.resolve('tests/ux_visual_baseline.json'),'utf8'));
 const POP=[0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4];
+const browser=await chromium.launch({headless:true});
+const page=await browser.newPage();
 
-function blockDHash(file,hashSize=16){
-  const png=PNG.sync.read(fs.readFileSync(file));
-  const cols=hashSize+1,rows=hashSize;
-  const values=Array.from({length:rows},()=>Array(cols).fill(0));
-  for(let ty=0;ty<rows;ty++){
-    const y0=Math.floor(ty*png.height/rows);
-    const y1=Math.max(y0+1,Math.floor((ty+1)*png.height/rows));
-    for(let tx=0;tx<cols;tx++){
-      const x0=Math.floor(tx*png.width/cols);
-      const x1=Math.max(x0+1,Math.floor((tx+1)*png.width/cols));
-      let sum=0,count=0;
-      for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
-        const i=(png.width*y+x)<<2;
-        const r=png.data[i],g=png.data[i+1],b=png.data[i+2];
-        sum+=0.299*r+0.587*g+0.114*b;count++;
+async function blockDHash(file,hashSize=16){
+  const dataUrl=`data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
+  return await page.evaluate(async ({dataUrl,hashSize})=>{
+    const img=new Image();
+    img.src=dataUrl;
+    await img.decode();
+    const canvas=document.createElement('canvas');canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(img,0,0);
+    const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    const width=canvas.width,height=canvas.height,cols=hashSize+1,rows=hashSize;
+    const values=Array.from({length:rows},()=>Array(cols).fill(0));
+    for(let ty=0;ty<rows;ty++){
+      const y0=Math.floor(ty*height/rows),y1=Math.max(y0+1,Math.floor((ty+1)*height/rows));
+      for(let tx=0;tx<cols;tx++){
+        const x0=Math.floor(tx*width/cols),x1=Math.max(x0+1,Math.floor((tx+1)*width/cols));
+        let sum=0,count=0;
+        for(let y=y0;y<y1;y++)for(let x=x0;x<x1;x++){
+          const i=(width*y+x)*4;sum+=0.299*pixels[i]+0.587*pixels[i+1]+0.114*pixels[i+2];count++;
+        }
+        values[ty][tx]=count?sum/count:0;
       }
-      values[ty][tx]=count?sum/count:0;
     }
-  }
-  let bits='';
-  for(let y=0;y<rows;y++)for(let x=0;x<hashSize;x++)bits+=values[y][x+1]>values[y][x]?'1':'0';
-  let hex='';
-  for(let i=0;i<bits.length;i+=4)hex+=parseInt(bits.slice(i,i+4),2).toString(16);
-  return hex;
+    let bits='';
+    for(let y=0;y<rows;y++)for(let x=0;x<hashSize;x++)bits+=values[y][x+1]>values[y][x]?'1':'0';
+    let hex='';for(let i=0;i<bits.length;i+=4)hex+=parseInt(bits.slice(i,i+4),2).toString(16);
+    return hex;
+  },{dataUrl,hashSize});
 }
 function hammingHex(a,b){
   if(a.length!==b.length)throw new Error(`Hash length mismatch ${a.length} != ${b.length}`);
-  let distance=0;
-  for(let i=0;i<a.length;i++)distance+=POP[parseInt(a[i],16)^parseInt(b[i],16)];
-  return distance;
+  let distance=0;for(let i=0;i<a.length;i++)distance+=POP[parseInt(a[i],16)^parseInt(b[i],16)];return distance;
 }
 
 const failures=[];
-const results={algorithm:baseline.algorithm,approved_source_run:baseline.approved_source_run,screens:{}};
+const results={algorithm:baseline.algorithm,approved_source_run:baseline.approved_source_run,approved_visual_artifact_digest:baseline.approved_visual_artifact_digest,screens:{}};
 for(const [name,rule] of Object.entries(baseline.screens)){
   const file=path.join(root,name);
   if(!fs.existsSync(file)){failures.push(`${name}: screenshot is missing`);continue;}
-  const actual=blockDHash(file);
+  const actual=await blockDHash(file);
   const distance=hammingHex(actual,rule.hash);
   results.screens[name]={expected:rule.hash,actual,hamming:distance,max_hamming:rule.max_hamming,pass:distance<=rule.max_hamming};
   if(distance>rule.max_hamming)failures.push(`${name}: visual fingerprint drift ${distance} bits exceeds approved limit ${rule.max_hamming}`);
 }
+await browser.close();
 fs.writeFileSync(path.join(root,'visual-regression.json'),JSON.stringify({...results,failures},null,2));
 if(failures.length){console.error(failures.join('\n'));process.exit(1)}
 console.log(`Trace visual regression: ${Object.keys(baseline.screens).length} approved screens within perceptual baseline`);
 ''',encoding='utf-8')
 
+visual=visual_path.read_text(encoding='utf-8')
+marker="await import('./ux_foundation_visual_regression.mjs');"
+if marker not in visual:
+  visual += '\n// Approved visual-regression baseline. Never auto-regenerate this reference in CI.\n'+marker+'\n'
+visual_path.write_text(visual,encoding='utf-8')
+
 contract=contract_path.read_text(encoding='utf-8')
 for assertion in (
   "assert Path('tests/ux_visual_baseline.json').exists()\n",
   "assert Path('tests/ux_foundation_visual_regression.mjs').exists()\n",
+  "assert \"ux_foundation_visual_regression.mjs\" in Path('tests/ux_foundation_visuals.mjs').read_text(encoding='utf-8')\n",
 ):
   if assertion not in contract: contract+='\n'+assertion
 contract_path.write_text(contract,encoding='utf-8')
-print('Approved perceptual visual-regression baseline and comparator staged')
+print('Approved self-contained perceptual visual-regression baseline and comparator staged')
