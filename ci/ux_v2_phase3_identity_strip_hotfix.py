@@ -48,12 +48,9 @@ for assertion in (
         contract += '\n'+assertion
 contract_path.write_text(contract,encoding='utf-8')
 
-# The visual fixture should describe its two real transcript rows honestly.
 if visual_path.exists():
     visual=visual_path.read_text(encoding='utf-8')
     visual=visual.replace("kind:'text',participantId:'p1'", "kind:'text',lines:2,participantId:'p1'", 1)
-
-    # Record and reject any physical collision between the source identity strip and document tabs.
     old="""      codingTitles:[...document.querySelectorAll('.coding-stripes i')].map(i=>i.getAttribute('title')||i.textContent?.trim()||''),
       inspectorVisible:[...document.querySelectorAll('.inspector')].some(visible),"""
     new="""      codingTitles:[...document.querySelectorAll('.coding-stripes i')].map(i=>i.getAttribute('title')||i.textContent?.trim()||''),
@@ -63,7 +60,6 @@ if visual_path.exists():
         visual=visual.replace(old,new,1)
     elif 'identityTabOverlap:' not in visual:
         raise SystemExit('Could not locate visual metadata anchor')
-
     old_check="""  if(meta.minimumVisibleFontPx>0&&meta.minimumVisibleFontPx<12)failures.push(`${name}: visible UI text fell below 12px (${meta.minimumVisibleFontPx}px)`);"""
     new_check=old_check+"\n  if(meta.identityTabOverlap>1)failures.push(`${name}: source identity overlaps document tabs by ${meta.identityTabOverlap}px`);"
     if old_check in visual and 'source identity overlaps document tabs' not in visual:
@@ -72,14 +68,13 @@ if visual_path.exists():
         raise SystemExit('Could not locate visual geometry assertion anchor')
     visual_path.write_text(visual,encoding='utf-8')
 
-# Keep save timing in contextual details rather than turning the global topbar into a stale-age ticker.
 runpy.run_path('../control/ci/ux_v2_phase3_save_status_hotfix.py',run_name='__main__')
-# Finish the plain-language error migration after the trust helpers and consequence previews exist.
 runpy.run_path('../control/ci/ux_v2_phase7_error_completion_hotfix.py',run_name='__main__')
+runpy.run_path('../control/ci/ux_v2_phase7_desktop_interaction_hotfix.py',run_name='__main__')
 
 check=app_path.read_text(encoding='utf-8')
 styles=css_path.read_text(encoding='utf-8')
-for required in ('has-workspace-identity','Open source context'):
-    if required not in check: raise SystemExit(f'Identity strip app contract missing: {required}')
+for required in ('has-workspace-identity','Open source context','prepareWorkspaceForOpen','openTraceContextMenu'):
+    if required not in check: raise SystemExit(f'Identity/desktop interaction app contract missing: {required}')
 if marker not in styles: raise SystemExit('Identity strip CSS marker missing')
-print('Source identity strip, document-tab overlap guard, stable Saved status and human errors applied')
+print('Source identity strip, stable Saved status, human errors, context menus and workspace memory applied')
