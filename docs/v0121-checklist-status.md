@@ -32,7 +32,7 @@ Status legend: `DONE`, `LOCAL GREEN`, `IN PROGRESS`, `PENDING`, `PHYSICAL UAT`.
 | Installer diagnostics / repair UI | DONE | final source and maintenance verification green |
 | Expanded installer matrix | DONE | run `32724433832` green for clean install, upgrade, running-process block/retry, repair, partial install recovery, and custom path |
 | Exact final Windows release after all above | DONE | artifact `Trace-v0.12.1-Exact-Verified-Windows-Release`, run `32724433832` |
-| Physical real-machine visual UAT | PHYSICAL UAT | requires the user's actual Windows display and scaling |
+| Physical real-machine visual UAT | PHYSICAL UAT | tracked in [issue #5](https://github.com/realmindxgh/trace-desktop/issues/5); requires the user's actual Windows display and scaling |
 
 ## Final source gate evidence
 
@@ -77,6 +77,10 @@ The final Windows verification passed:
 - version consistency
 - stale `0.9.0` removal
 
+## Repository promotion
+
+The verified `trace-v0121` line was fast-forwarded to `main` on 2026-08-27. The default branch now contains the completed v0.12.1 engineering state instead of the older v0.11-era checkpoint.
+
 ## Local checkpoint evidence
 
 The expanded source passed locally before reconstruction and was then revalidated on the Windows source gate. The final-v2 workflow also reran the carried research contracts before building the release.
@@ -85,4 +89,4 @@ The expanded source passed locally before reconstruction and was then revalidate
 
 CI cannot truthfully replace inspection on the user's own Windows machine. The remaining item is a short physical UAT pass covering the installer maintenance flow and the Data, Code, Themes, Analyse, and Write workspaces at the user's actual display and scaling.
 
-Agents must update this file and `PROGRESS.md` if physical UAT reveals a defect or when physical UAT is completed.
+The acceptance steps are tracked in [issue #5](https://github.com/realmindxgh/trace-desktop/issues/5). Agents must update this file and `PROGRESS.md` if physical UAT reveals a defect or when physical UAT is completed.
