@@ -73,10 +73,11 @@ runpy.run_path('../control/ci/ux_v2_phase7_error_completion_hotfix.py',run_name=
 runpy.run_path('../control/ci/ux_v2_phase7_desktop_interaction_hotfix.py',run_name='__main__')
 runpy.run_path('../control/ci/ux_v2_phase4_media_project_settings_hotfix.py',run_name='__main__')
 runpy.run_path('../control/ci/ux_v2_phase4_media_choice_inline_hotfix.py',run_name='__main__')
+runpy.run_path('../control/ci/ux_v2_final_closure_hotfix.py',run_name='__main__')
 
 check=app_path.read_text(encoding='utf-8')
 styles=css_path.read_text(encoding='utf-8')
-for required in ('has-workspace-identity','Open source context','prepareWorkspaceForOpen','openTraceContextMenu','offerMediaImportChoice','media-import-next-actions','default-transcription-language','project-export-prefix'):
-    if required not in check: raise SystemExit(f'Identity/desktop/settings app contract missing: {required}')
+for required in ('has-workspace-identity','Open source context','prepareWorkspaceForOpen','openTraceContextMenu','offerMediaImportChoice','media-import-next-actions','default-transcription-language','project-export-prefix','renderImportCompletion','shortcut-settings-card','data-app-theme'):
+    if required not in check: raise SystemExit(f'Final audited app contract missing: {required}')
 if marker not in styles: raise SystemExit('Identity strip CSS marker missing')
-print('Source identity strip, stable Saved status, human errors, desktop interaction, non-blocking media choices and project/application settings applied')
+print('Final audited UX closure chain applied')
