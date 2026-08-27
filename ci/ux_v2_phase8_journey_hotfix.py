@@ -17,7 +17,7 @@ async function researcherJourney(){
   if(!await page.locator('.project-overview').count())errors.push('journey project did not open Project Overview');
   await page.locator('#file-import').setInputFiles({name:'Interview 01.txt',mimeType:'text/plain',buffer:Buffer.from('Access to support was difficult at first, but peer help changed the experience.')});
   await page.waitForTimeout(150);
-  if(!await page.getByText('1').first().count())errors.push('journey import did not update project state');
+  if(!await page.locator('.project-health article').filter({hasText:'Sources'}).filter({hasText:'1'}).count())errors.push('journey import did not update project source count');
   await page.click('[data-section="Code"]');
   if(!await page.locator('.transcript-line p').count())errors.push('journey imported transcript is not codable');
   await page.keyboard.press('Control+Shift+C');
@@ -26,7 +26,7 @@ async function researcherJourney(){
   await page.click('#ce-save');
   await page.locator('.transcript-line p').first().evaluate(el=>{const node=el.firstChild;if(!node)return;const range=document.createRange();range.setStart(node,0);range.setEnd(node,Math.min(17,node.textContent.length));const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);el.closest('#transcript-scroll')?.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));});
   await page.click('#tool-code');
-  await page.click('[data-code]');
+  await page.locator('[data-code]').first().click();
   if(!await page.locator('.coding-stripe').count())errors.push('journey coding did not attach visibly to the transcript');
   await page.keyboard.press('Control+Shift+M');
   await page.fill('#me-name','Access memo');
@@ -41,7 +41,7 @@ async function researcherJourney(){
   await page.click('[data-section="Analyse"]');
   if(!await page.locator('[data-analysis-tab="matrix"]').count())errors.push('journey Analyse workspace missing evidence navigation');
   await page.click('[data-section="Write"]');
-  if(!await page.locator('[data-write-target="theme:').count())errors.push('journey theme did not become a writing target');
+  if(!await page.locator('[data-write-target^="theme:"]').count())errors.push('journey theme did not become a writing target');
   await page.fill('#findings-body','Participants described initial access barriers, with peer support changing how support was experienced.');
   await page.click('#save-findings');
   if(!await page.locator('#write-save-status').filter({hasText:/Saved/}).count())errors.push('journey findings did not save');
