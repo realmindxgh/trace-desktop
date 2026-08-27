@@ -84,9 +84,13 @@ The item-by-item audit found and closed the late structural gaps before Windows 
 - The first successful coding action provides one restrained orientation hint toward the next research stage rather than gamifying progress.
 - Application Settings owns appearance/interface size and shortcut discoverability rather than scattering those application-wide controls through project screens.
 - `docs/TRACE_DESIGN_SYSTEM.md` formally defines typography, spacing, radii, surfaces, borders, icons, pane behaviour, empty/loading/error states, dialogs, context menus, responsive rules, accessibility and the visual-regression change rule.
-- Phase 8 now stages a fixed perceptual visual baseline for Home, empty project, Data, Code, Themes, Analyse, Write and the 1366x768/125% Code case. CI compares current screenshots to that approved baseline using a bounded perceptual fingerprint and writes a regression receipt; the reference cannot update itself.
+- Phase 8 stages a perceptual visual baseline for Home, empty project, Data, Code, Themes, Analyse, Write and the 1366x768/125% Code case. CI compares current screenshots to the approved reference using a bounded perceptual fingerprint and writes a regression receipt; the reference cannot update itself.
 
-The final source gate must reconstruct and test the full chain including stable save-state copy, actionable errors, source-identity geometry, desktop context menus, workspace-memory semantics, explicit media-transcription choice, application transcription defaults, project-specific participant/export configuration, import completion actions, first-coding guidance and approved visual regression. No Windows acceptance pointer may be created from an earlier green run.
+### Visual baseline review capture
+
+Run 24 correctly rejected the newest candidate because its deterministic screenshots differ from the earlier run-21 visual reference after intentional closure work. The current comparator is therefore in a temporary capture-only state solely to produce reviewable final screenshots and perceptual hashes. This capture is **not** an approved baseline, must not create a Windows acceptance pointer, and must not be used as release evidence. After the eight images are manually inspected, the reviewed hashes will be committed explicitly, strict enforcement will be restored, and the full source gate will run again.
+
+The final source gate must reconstruct and test the full chain including stable save-state copy, actionable errors, source-identity geometry, desktop context menus, workspace-memory semantics, explicit media-transcription choice, application transcription defaults, project-specific participant/export configuration, import completion actions, first-coding guidance and approved visual regression. No Windows acceptance pointer may be created from an earlier green run or from the capture-only review run.
 
 ## Progress rule
 
