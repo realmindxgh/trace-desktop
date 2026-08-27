@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 p=Path('tests/ux_foundation_visuals.mjs')
 p.write_text(r'''import { chromium } from 'playwright';
@@ -88,4 +89,8 @@ for(const name of required){
 if(failures.length){console.error(failures.join('\n'));process.exit(1)}
 console.log(`Trace UX visual evidence: ${required.length} deterministic screens captured and checked`);
 ''',encoding='utf-8')
-print('Deterministic UX visual-evidence browser script staged with populated coding and laptop evidence')
+
+# Phase 3 shell correction is applied after the visual fixture exists so it can also inject the
+# physical source-identity/document-tab geometry assertion into this exact evidence gate.
+runpy.run_path('../control/ci/ux_v2_phase3_identity_strip_hotfix.py',run_name='__main__')
+print('Deterministic UX visual-evidence browser script staged with populated coding, laptop evidence and identity-strip geometry guard')
