@@ -1,0 +1,289 @@
+name: Trace UX Foundation Windows acceptance
+
+on:
+  push:
+    branches: [trace-ux-foundation-v2]
+    paths:
+      - 'release/ux-foundation-go.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: trace-ux-foundation-windows-acceptance
+  cancel-in-progress: true
+
+jobs:
+  windows-acceptance:
+    runs-on: windows-latest
+    timeout-minutes: 180
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_ARTIFACT: Trace-UX-Foundation-v2-Green-Source
+      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-ux-acceptance-target
+    steps:
+      - name: Checkout UX release control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-ux-foundation-v2
+          path: control
+
+      - name: Resolve exact green UX source pointer
+        shell: pwsh
+        run: |
+          $pointer='control/release/ux-foundation-go.txt'
+          if (!(Test-Path $pointer)) { throw 'UX Foundation source pointer is missing.' }
+          $kv=@{}
+          Get-Content $pointer | ForEach-Object { if($_ -match '^([^=]+)=(.*)$'){ $kv[$matches[1]]=$matches[2] } }
+          if($kv['source_gate_result'] -ne 'success'){ throw 'UX source pointer is not green.' }
+          $run=[string]$kv['source_gate_run']
+          if($run -notmatch '^\d+$'){ throw 'UX source pointer run ID is invalid.' }
+          if([string]::IsNullOrWhiteSpace($kv['source_gate_sha'])){ throw 'UX source pointer SHA is missing.' }
+          if([string]::IsNullOrWhiteSpace($kv['source_gate_artifact_digest'])){ throw 'UX source artifact digest is missing.' }
+          "TRACE_UX_SOURCE_RUN=$run" | Out-File $env:GITHUB_ENV -Append
+          "TRACE_UX_SOURCE_SHA=$($kv['source_gate_sha'])" | Out-File $env:GITHUB_ENV -Append
+          "TRACE_UX_SOURCE_DIGEST=$($kv['source_gate_artifact_digest'])" | Out-File $env:GITHUB_ENV -Append
+
+      - name: Verify and download exact green UX source
+        shell: pwsh
+        run: |
+          $meta=(gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:TRACE_UX_SOURCE_RUN/artifacts" | ConvertFrom-Json)
+          $artifact=$meta.artifacts | Where-Object { $_.name -eq $env:SOURCE_ARTIFACT } | Select-Object -First 1
+          if(!$artifact){ throw "Green UX artifact $env:SOURCE_ARTIFACT was not found on run $env:TRACE_UX_SOURCE_RUN." }
+          if($artifact.digest -ne $env:TRACE_UX_SOURCE_DIGEST){ throw "UX artifact digest mismatch. Expected $env:TRACE_UX_SOURCE_DIGEST, got $($artifact.digest)." }
+          New-Item -ItemType Directory -Force -Path source/work | Out-Null
+          gh run download $env:TRACE_UX_SOURCE_RUN --repo $env:GITHUB_REPOSITORY --name $env:SOURCE_ARTIFACT --dir source/work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download exact green UX source.' }
+          foreach($required in @('source/work/index.html','source/work/src/app.js','source/work/src/styles.css','source/work/src-tauri/Cargo.toml','source/work/setup-shell/src-tauri/Cargo.toml','source/work/tests/ux_foundation_v2.mjs','source/work/tests/v0121_full_checklist.py')){
+            if(!(Test-Path $required)){ throw "Green UX source is incomplete: $required" }
+          }
+
+      - name: Download exact verified v0.12 release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path previous/v012 | Out-Null
+          gh run download 32639353769 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12-Exact-Verified-Windows-Release' --dir previous/v012
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve exact verified v0.12 release.' }
+          if (!(Test-Path 'previous/v012/release/TraceSetup.exe')) { throw 'Verified v0.12 TraceSetup.exe is missing.' }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Re-run research and UX source contracts
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          function Check([string]$Label,[scriptblock]$Cmd){ & $Cmd; if($LASTEXITCODE -ne 0){throw "$Label failed with $LASTEXITCODE"} }
+          Check 'app JavaScript syntax' { node --check src/app.js }
+          Check 'UX Foundation static contract' { python tests/ux_foundation_v2_contract.py }
+          Check 'schema contract' { python tests/schema_contract.py }
+          Check 'Office and survey imports' { python tests/v11_imports_display.py }
+          Check 'coding and usability regression' { python tests/v11_usability.py }
+          Check 'local transcription regression' { python tests/v11_transcription.py }
+          Check 'PDF text regression' { python tests/v11_pdf_text.py }
+          Check 'analysis/intercoder regression' { python tests/v12_analysis.py }
+          Check 'v0.12.1 hardening regression' { python tests/v0121_hardening.py }
+          Check 'v0.12.1 full checklist regression' { python tests/v0121_full_checklist.py }
+          Check 'intercoder mathematics' { node tests/v12_analysis_math.mjs }
+          Check 'large-project workload contract' { node tests/v0121_workload.mjs }
+
+      - name: Build frontends and install verification tooling
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          Push-Location setup-shell
+          npm run build
+          $setupBuild=$LASTEXITCODE
+          Pop-Location
+          if ($setupBuild -ne 0) { throw 'Trace setup frontend build failed.' }
+          npm install --no-save --package-lock=false playwright@1.55.0 @tauri-apps/cli@2.11.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install UX acceptance tooling.' }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Chromium for acceptance checks.' }
+
+      - name: Re-run browser UX journey and visual evidence
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          $server=Start-Process -FilePath python -ArgumentList @('-m','http.server','4173','--bind','127.0.0.1') -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            node tests/ux_foundation_v2.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'UX researcher journey failed in acceptance build.' }
+            if(Test-Path tests/ux_foundation_visuals.mjs){
+              node tests/ux_foundation_visuals.mjs
+              if ($LASTEXITCODE -ne 0) { throw 'UX visual evidence gate failed.' }
+            }
+            node tests/v0121_layout.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Viewport/DPI matrix failed in acceptance build.' }
+          } finally { if($server -and -not $server.HasExited){ Stop-Process -Id $server.Id -Force } }
+
+      - name: Add branded setup verification CLI
+        shell: pwsh
+        working-directory: source
+        run: |
+          python ../control/ci/add_trace_setup_cli.py
+          if ($LASTEXITCODE -ne 0) { throw 'Could not add branded setup verification CLI.' }
+
+      - name: Build native Trace bundle
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native tests failed.' }
+          npx tauri build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native Windows bundle build failed.' }
+
+      - name: Stage native NSIS payload and build branded setup
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          $payload=Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if(!$payload){ throw 'Tauri NSIS payload was not produced.' }
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null
+          Copy-Item $payload.FullName setup-shell/src-tauri/payload/trace-payload.exe -Force
+          $payloadHash=(Get-FileHash setup-shell/src-tauri/payload/trace-payload.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_UX_NATIVE_NSIS_HASH=$payloadHash" | Out-File $env:GITHUB_ENV -Append
+          Push-Location setup-shell
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Setup shell cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Setup shell tests failed.' }
+          cargo build --release --manifest-path src-tauri/Cargo.toml
+          $setupExit=$LASTEXITCODE
+          Pop-Location
+          if ($setupExit -ne 0) { throw 'Branded setup release build failed.' }
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item setup-shell/src-tauri/target/release/trace-setup.exe release/TraceSetup.exe -Force
+          $setupHash=(Get-FileHash release/TraceSetup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_UX_SETUP_HASH=$setupHash" | Out-File $env:GITHUB_ENV -Append
+          "TraceSetup.exe  $setupHash" | Set-Content release/SHA256.txt
+
+      - name: Establish exact native installed reference
+        shell: pwsh
+        run: |
+          $nativeSetup=(Get-ChildItem source/work/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          $referenceDir=Join-Path $env:RUNNER_TEMP 'TraceUXNativeReference'
+          if(Test-Path $referenceDir){ Remove-Item $referenceDir -Recurse -Force }
+          $p=Start-Process -FilePath $nativeSetup -ArgumentList @('/S',"/D=$referenceDir") -Wait -PassThru
+          if($p.ExitCode -ne 0){ throw "Native reference install failed with exit code $($p.ExitCode)." }
+          $trace=Join-Path $referenceDir 'Trace.exe'
+          if(!(Test-Path $trace)){ throw 'Native reference Trace.exe is missing.' }
+          $hash=(Get-FileHash $trace -Algorithm SHA256).Hash.ToLowerInvariant()
+          "TRACE_UX_REFERENCE_HASH=$hash" | Out-File $env:GITHUB_ENV -Append
+          $u=Get-ChildItem $referenceDir -Filter '*uninstall*.exe' -File | Select-Object -First 1
+          if(!$u){ throw 'Native reference uninstaller is missing.' }
+          $x=Start-Process -FilePath $u.FullName -ArgumentList '/S' -Wait -PassThru
+          if($x.ExitCode -ne 0){ throw "Native reference uninstall failed with exit code $($x.ExitCode)." }
+
+      - name: Install branded candidate and exercise actual WebView2 researcher journey
+        shell: pwsh
+        run: |
+          $installDir=Join-Path $env:RUNNER_TEMP 'TraceUXInstalledAcceptance'
+          if(Test-Path $installDir){ Remove-Item $installDir -Recurse -Force }
+          $setup=(Resolve-Path source/work/release/TraceSetup.exe).Path
+          & $setup --silent-install --install-dir $installDir
+          if($LASTEXITCODE -ne 0){ throw "Branded candidate install failed with exit code $LASTEXITCODE." }
+          $installed=Join-Path $installDir 'Trace.exe'
+          if(!(Test-Path $installed)){ throw 'Installed Trace.exe is missing.' }
+          $installedHash=(Get-FileHash $installed -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($installedHash -ne $env:TRACE_UX_REFERENCE_HASH){ throw 'Branded installed Trace.exe differs from the native reference.' }
+          $importFile=Join-Path $env:RUNNER_TEMP 'trace-installed-interview.txt'
+          'Access to support was difficult at first, but peer help changed the experience.' | Set-Content $importFile -Encoding UTF8
+          $env:TRACE_INSTALLED_EXE=$installed
+          $env:TRACE_PLAYWRIGHT_ROOT=(Resolve-Path source/work).Path
+          $env:TRACE_WEBVIEW_USER_DATA=Join-Path $env:RUNNER_TEMP 'TraceUXWebViewProfile'
+          $env:TRACE_INSTALLED_EVIDENCE_DIR=(Resolve-Path source/work).Path+'\test-artifacts\installed-ux'
+          New-Item -ItemType Directory -Force -Path $env:TRACE_INSTALLED_EVIDENCE_DIR | Out-Null
+          $env:TRACE_INSTALLED_IMPORT_FILE=$importFile
+          node control/ci/ux_v2_installed_webview_smoke.mjs
+          $smokeExit=$LASTEXITCODE
+          if($smokeExit -ne 0){ throw "Installed WebView2 researcher journey failed with exit code $smokeExit." }
+          & $setup --silent-uninstall --install-dir $installDir
+          if($LASTEXITCODE -ne 0){ throw "Post-smoke uninstall failed with exit code $LASTEXITCODE." }
+
+      - name: Run branded maintenance matrix
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          & control/ci/v0121_final_matrix.ps1 -NewSetup source/work/release/TraceSetup.exe -OldSetup previous/v012/release/TraceSetup.exe -ReferenceHash $env:TRACE_UX_REFERENCE_HASH -ReleaseDir source/work/release
+          if($LASTEXITCODE -ne 0){ throw "Maintenance matrix failed with exit code $LASTEXITCODE." }
+          if(!(Test-Path source/work/release/MAINTENANCE-MATRIX.txt)){ throw 'Maintenance matrix evidence is missing.' }
+
+      - name: Run branded rollback verification
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference=$false
+          & control/ci/v0121_rollback_probe.ps1 -NewSetup source/work/release/TraceSetup.exe -ReferenceHash $env:TRACE_UX_REFERENCE_HASH -ReleaseDir source/work/release
+          if($LASTEXITCODE -ne 0){ throw "Rollback verification failed with exit code $LASTEXITCODE." }
+          if(!(Test-Path source/work/release/ROLLBACK-VERIFICATION.txt)){ throw 'Rollback evidence is missing.' }
+
+      - name: Write UX Windows acceptance record
+        shell: pwsh
+        run: |
+          @"
+          Trace UX Foundation Windows acceptance
+          run_id=${{ github.run_id }}
+          control_sha=${{ github.sha }}
+          source_gate_run=$env:TRACE_UX_SOURCE_RUN
+          source_gate_sha=$env:TRACE_UX_SOURCE_SHA
+          source_artifact=$env:SOURCE_ARTIFACT
+          source_artifact_digest=$env:TRACE_UX_SOURCE_DIGEST
+          TraceSetup_sha256=$env:TRACE_UX_SETUP_HASH
+          native_NSIS_sha256=$env:TRACE_UX_NATIVE_NSIS_HASH
+          installed_reference_Trace_exe_sha256=$env:TRACE_UX_REFERENCE_HASH
+          research_contracts_green=true
+          browser_researcher_journey_green=true
+          visual_evidence_green=true
+          native_trace_compile_tests_green=true
+          setup_shell_compile_tests_green=true
+          branded_clean_install_green=true
+          installed_exe_matches_native_reference=true
+          installed_webview_fresh_home_green=true
+          installed_webview_no_fixture_or_phantom_participant=true
+          installed_webview_researcher_journey_green=true
+          installed_webview_close_reopen_persistence_green=true
+          maintenance_matrix_green=true
+          rollback_verification_green=true
+          physical_real_machine_uat=false
+          release_status=ACCEPTANCE_BUILD_NOT_FINAL_RELEASE
+          "@ | Set-Content source/work/release/UX-WINDOWS-ACCEPTANCE.txt
+
+      - name: Upload installed UX evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-UX-Foundation-Installed-Evidence
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            source/work/test-artifacts/installed-ux/**
+            source/work/test-artifacts/ux-visuals/**
+
+      - name: Upload Windows acceptance build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-UX-Foundation-Windows-Acceptance
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            source/work/release/TraceSetup.exe
+            source/work/release/SHA256.txt
+            source/work/release/MAINTENANCE-MATRIX.txt
+            source/work/release/ROLLBACK-VERIFICATION.txt
+            source/work/release/UX-WINDOWS-ACCEPTANCE.txt
