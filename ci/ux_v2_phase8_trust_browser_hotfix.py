@@ -3,37 +3,50 @@ from pathlib import Path
 p=Path('tests/ux_foundation_v2.mjs')
 s=p.read_text(encoding='utf-8')
 if 'async function trustSafetyUx()' not in s:
-    terminal="await fresh();await emptyProject();await populated();await contextualData();await keyboardProductivity();await contextualShell();await browser.close();if(errors.length){console.error(errors.join('\\n'));process.exit(1)}console.log('Trace UX Foundation v2 browser contract: green');"
+    terminal='await fresh();await emptyProject();await populated();await contextualData();await keyboardProductivity();await contextualShell();await researcherJourney();await browser.close();'
     if terminal not in s:
-        raise SystemExit('UX browser terminal sequence changed')
+        raise SystemExit('Researcher-journey browser terminal sequence changed')
     add=r'''
 async function trustSafetyUx(){
   const ctx=await browser.newContext({viewport:{width:1600,height:900}});
-  await ctx.addInitScript(()=>localStorage.setItem('trace-v010-state',JSON.stringify({project:{id:'p',title:'Trust study',methodology:'RTA',codingMode:'manual',researchQuestions:[],researchQuestionRecords:[]},activeSection:'Data',dataContext:'sources',activeParticipant:'P01',activeSourceId:'s1',participants:[{id:'P01',internalId:'p1',role:'Participant'}],importedSources:[{id:'s1',name:'Interview 01',kind:'text',participantId:'p1',segments:[{id:'seg1',speaker:'P01',text:'Access was difficult'}],codings:[]}],codes:[{id:'c1',name:'Access',description:'',color:'#2e76ff'}],codingRefs:[{id:'r1',sourceId:'s1',codeId:'c1',participantId:'p1',text:'Access was difficult'}],allCodingRefs:[{id:'r1',sourceId:'s1',codeId:'c1',participantId:'p1',text:'Access was difficult'}],annotations:[{id:'a1',sourceId:'s1',startOffset:0,endOffset:6,body:'Important'}],evidenceAnchors:[{id:'e1',sourceId:'s1',startOffset:0,endOffset:6,exactText:'Access'}],memos:[{id:'m1',name:'Source memo',targetType:'source',targetId:'s1',text:'Analytical note'}],sourceProperties:[],sourceCollections:[{id:'col1',name:'Interviews',sourceIds:['s1']}],themes:[],findingsSections:[],findingsEvidence:[],importQueue:[],backups:[],audit:[],mediaSelections:[],mediaCodings:[],mediaPayloads:{},savedAt:Date.now()})));
+  await ctx.addInitScript(()=>localStorage.setItem('trace-v010-state',JSON.stringify({
+    project:{id:'p',title:'Trust study',methodology:'RTA',codingMode:'manual',researchQuestions:[],researchQuestionRecords:[]},activeSection:'Data',dataContext:'sources',activeParticipant:'P01',activeSourceId:'s1',openSourceTabs:['s1'],
+    participants:[{id:'P01',internalId:'p1',role:'Participant'}],
+    transcript:[{speaker:'P01',text:'Access was difficult',sourceId:'s1',segmentId:'seg1',startChar:0,endChar:20}],
+    importedSources:[{id:'s1',name:'Interview 01',kind:'text',participantId:'p1',segments:[{id:'seg1',speaker:'P01',text:'Access was difficult'}],codings:[]}],
+    codes:[{id:'c1',name:'Access',description:'',color:'#4466aa'}],coders:[{id:'u1',name:'Researcher'}],activeCoderId:'u1',
+    codingRefs:[{id:'r1',sourceId:'s1',codeId:'c1',participantId:'p1',segmentId:'seg1',text:'Access was difficult'}],allCodingRefs:[{id:'r1',sourceId:'s1',codeId:'c1',participantId:'p1',segmentId:'seg1',text:'Access was difficult'}],
+    annotations:[{id:'a1',sourceId:'s1',startOffset:0,endOffset:6,body:'Important'}],evidenceAnchors:[{id:'e1',sourceId:'s1',startOffset:0,endOffset:6,exactText:'Access'}],
+    memos:[{id:'m1',name:'Source memo',targetType:'source',targetId:'s1',text:'Analytical note'}],sourceProperties:[],sourceCollections:[{id:'col1',name:'Interviews',sourceIds:['s1']}],
+    importQueue:[{id:'q1',name:'damaged-project.qdpx',status:'error',message:'Trace could not safely import this project file.',technicalDetails:'SQLITE_CORRUPT: database disk image is malformed'}],
+    themes:[],findingsSections:[],findingsEvidence:[],backups:[],audit:[],mediaSelections:[{id:'ms1',sourceId:'s1',startTime:2,endTime:6}],mediaCodings:[],mediaPayloads:{},savedAt:Date.now()
+  })));
   const page=await ctx.newPage();await page.goto(base,{waitUntil:'networkidle'});
+
+  // Source deletion must disclose all project relationships before any destructive write.
   await page.click('[data-manage-source="s1"]');
   await page.click('#sm-delete');
-  const impact=await page.locator('.change-impact').innerText().catch(()=> '');
-  for(const label of ['coding reference','annotation','evidence anchor','source memo','collection','source-to-participant'])if(!impact.includes(label))errors.push(`source delete confirmation does not disclose ${label}`);
+  const warning=await page.locator('.confirmation-modal .modal-note').innerText().catch(()=> '');
+  for(const label of ['coded passage','annotation','evidence anchor','saved media selection','source memo','collection','P01'])if(!warning.includes(label))errors.push(`source delete warning does not disclose ${label}`);
+  if(!/original external file remains unchanged/i.test(warning))errors.push('source delete warning does not distinguish project deletion from the original external file');
   await page.click('#confirm-cancel');
-  await page.evaluate(()=>showActionError('Import failed.',new Error('SQLITE_BUSY: database is locked'),'Close the related file and try again.'));
-  const summary=await page.locator('.error-summary').innerText().catch(()=> '');
-  if(/SQLITE|database is locked/i.test(summary))errors.push('framework/database detail leaked into primary error copy');
-  const technical=await page.locator('.technical-details code').textContent().catch(()=> '');
-  if(!/SQLITE_BUSY/.test(technical))errors.push('technical error disclosure is missing the troubleshooting detail');
-  await page.click('#error-close');
-  await page.evaluate(()=>showResearchProtection('Re-transcription is locked.','Current evidence depends on this transcript.',['1 coding reference','1 annotation']));
-  if(!await page.locator('.protection-modal').filter({hasText:'Protected evidence'}).count())errors.push('research-protection explanation is missing');
-  await page.click('#protection-close');
+
+  // Failed imports show human copy first and keep implementation details behind disclosure.
+  await page.click('[data-data-context="imports"]');
+  const result=page.locator('.import-result.error').filter({hasText:'damaged-project.qdpx'});
+  const visibleCopy=await result.locator('small').innerText().catch(()=> '');
+  if(/SQLITE|database disk image/i.test(visibleCopy))errors.push('database/framework detail leaked into primary import error copy');
+  if(!await result.locator('details').count())errors.push('failed import has no Technical details disclosure');
+  const technical=await result.locator('details').textContent().catch(()=> '');
+  if(!/SQLITE_CORRUPT/.test(technical))errors.push('failed import Technical details lost troubleshooting evidence');
   await ctx.close();
 }
 '''
-    replacement=add+"\nawait fresh();await emptyProject();await populated();await contextualData();await keyboardProductivity();await contextualShell();await trustSafetyUx();await browser.close();if(errors.length){console.error(errors.join('\\n'));process.exit(1)}console.log('Trace UX Foundation v2 browser contract: green');"
-    s=s.replace(terminal,replacement,1)
+    s=s.replace(terminal,add+'\nawait fresh();await emptyProject();await populated();await contextualData();await keyboardProductivity();await contextualShell();await researcherJourney();await trustSafetyUx();await browser.close();',1)
     p.write_text(s,encoding='utf-8')
 
 check=p.read_text(encoding='utf-8')
-for required in ('async function trustSafetyUx()','SQLITE_BUSY','source delete confirmation','research-protection explanation'):
+for required in ('async function trustSafetyUx()','source delete warning','SQLITE_CORRUPT','original external file remains unchanged'):
     if required not in check:
         raise SystemExit(f'Trust browser coverage missing: {required}')
-print('Phase 8 browser gate expanded for trust, errors and destructive-action disclosure')
+print('Phase 8 browser gate expanded for rendered trust and destructive-action disclosure')
