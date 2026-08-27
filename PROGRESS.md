@@ -10,13 +10,15 @@ Any agent making a material change must update this ledger before handoff.
 
 ## Current snapshot
 
-**Date:** 2026-08-24  
-**Branch:** `trace-v0121`  
+**Date:** 2026-08-27  
+**Branch:** `main` and `trace-v0121` aligned after v0.12.1 promotion  
 **Version:** `0.12.1`  
 **Milestone:** Full v0.12.1 UX + Installer Hardening checklist  
 **Status:** **ENGINEERING CHECKLIST COMPLETE; PHYSICAL UAT REMAINS**
 
-The final v0.12.1 Windows verification has now passed. The prior intermediate installer is superseded by the exact final-v2 release artifact from run `32724433832`.
+The final v0.12.1 Windows verification has passed. The verified development line was fast-forwarded to `main` on 2026-08-27 so the default branch now carries the completed v0.12.1 engineering state. The prior intermediate installer is superseded by the exact final-v2 release artifact from run `32724433832`.
+
+The only remaining acceptance item is physical real-machine UAT, tracked in [issue #5](https://github.com/realmindxgh/trace-desktop/issues/5).
 
 ## Previously proven intermediate release
 
@@ -157,6 +159,12 @@ The final-v2 workflow passed all of these gates:
 Maintenance matrix evidence recorded all scenarios as green.
 Rollback evidence recorded exact application-byte restoration and successful post-rollback maintenance.
 
+## Repository promotion
+
+On 2026-08-27, `main` was fast-forwarded from its older `6d23a97c3ab264af1f6deb3004fcb906a088d2c4` checkpoint to the verified v0.12.1 lineage. No force update was used. The default branch now exposes the completed v0.12.1 engineering state to normal clones and future work.
+
+Documentation was then updated on `trace-v0121` to record the remaining physical UAT and its tracking issue. `main` must remain aligned with the latest `trace-v0121` documentation commit before handoff.
+
 ## Release rule
 
 The engineering definition of done for v0.12.1 is now satisfied. The final installer is the artifact from run `32724433832`, not the earlier intermediate release.
@@ -165,8 +173,12 @@ The engineering definition of done for v0.12.1 is now satisfied. The final insta
 
 Physical inspection on the user's own Windows display cannot be simulated by CI. The only remaining acceptance item is a short real-machine UAT pass for the installer and Data/Code/Themes/Analyse/Write workspaces at the user's actual Windows scaling and display conditions.
 
+The exact acceptance checklist is tracked in [issue #5](https://github.com/realmindxgh/trace-desktop/issues/5).
+
 Until that physical pass is performed, v0.12.1 should be described as **engineering-complete and awaiting physical UAT**, not as fully UAT-complete.
 
 ## Continuation point
 
-No further engineering gate is required before physical UAT. Use the final artifact from run `32724433832` for the real-machine acceptance pass. If physical UAT reveals a defect, return to the affected checklist item, patch from the verified `trace-v0121` source lineage, and rerun the relevant source and Windows release gates before replacing the final artifact.
+No further engineering gate is required before physical UAT. Use the final artifact from run `32724433832` for the real-machine acceptance pass. If physical UAT reveals a defect, return to the affected checklist item, patch from the verified v0.12.1 source lineage, and rerun the relevant source and Windows release gates before replacing the final artifact.
+
+If physical UAT is clean, update `docs/v0121-checklist-status.md` and this ledger to mark UAT complete, close issue #5, and treat v0.12.1 as fully accepted.
