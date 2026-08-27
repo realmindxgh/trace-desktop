@@ -2,21 +2,62 @@
 
 This is the live execution ledger for Trace Desktop. Read it after `AGENTS.md`.
 
-- `AGENTS.md` defines the full checklist and acceptance contract.
-- `docs/v0121-checklist-status.md` tracks checklist areas.
+- `AGENTS.md` is now the **240-point Trace UX Foundation master product and execution contract**.
+- `docs/v0121-checklist-status.md` records the completed v0.12.1 engineering-hardening checklist.
 - `PROGRESS.md` records what has actually happened, with evidence and the exact continuation point.
 
 Any agent making a material change must update this ledger before handoff.
 
 ## Current snapshot
 
-**Date:** 2026-08-24  
-**Branch:** `trace-v0121`  
-**Version:** `0.12.1`  
-**Milestone:** Full v0.12.1 UX + Installer Hardening checklist  
-**Status:** **ENGINEERING CHECKLIST COMPLETE; PHYSICAL UAT REMAINS**
+**Date:** 2026-08-27  
+**Branch:** `main`  
+**Verified engineering baseline:** `0.12.1`  
+**Current milestone:** Trace UX Foundation  
+**Status:** **v0.12.1 ENGINEERING BASELINE VERIFIED; 240-POINT UX FOUNDATION CONTRACT ACTIVE**
 
-The final v0.12.1 Windows verification has now passed. The prior intermediate installer is superseded by the exact final-v2 release artifact from run `32724433832`.
+The final v0.12.1 Windows engineering verification remains valid. The exact final-v2 release artifact came from run `32724433832`.
+
+However, the v0.12.1 hardening checklist is no longer the full product definition of done. On 2026-08-27 the complete 240-point Trace UX/UI master backlog was promoted into `AGENTS.md` as the authoritative UX Foundation contract. That contract explicitly permits rebuilding the application shell and information architecture while preserving the working research engine.
+
+The previous statement that only physical UAT remained applied to the narrower v0.12.1 engineering-hardening checklist. Under the new master contract, substantial UX Foundation work remains before the product UX can be called complete.
+
+## Contract transition
+
+Commit `cd69e2246bce0de0d76505f4701e2855e0766b27` replaced the old hardening-only `AGENTS.md` mission with the 240-point Trace UX Foundation master contract.
+
+The new contract establishes these eight phases:
+
+1. production-state hygiene, Home and first launch
+2. navigation architecture and the context-pane/workspace/inspector shell
+3. typography, spacing, component design and responsive behaviour
+4. Data/import/source/participant workflows
+5. Code, Themes, Analyse and Write within the shared shell
+6. contextual Trace AI
+7. keyboard productivity, command palette, accessibility and advanced interaction polish
+8. visual and first-launch regression gates in the Windows release pipeline
+
+The target desktop shell is now:
+
+`Navigation rail | Context pane | Main workspace | Inspector`
+
+The existing Data -> Code -> Themes -> Analyse -> Write research model remains the conceptual backbone, but the old giant floating bottom dock is not a protected architectural requirement.
+
+The master completion rule now requires the real end-to-end researcher journey to be exercised:
+
+`create project -> import data -> organise participants -> code passages -> create notes/memos -> build themes -> analyse -> write/export -> close -> reopen -> recover/backup`
+
+## Main-branch promotion
+
+On 2026-08-27, `main` was fast-forwarded from the stale pre-v0.12 line to the verified v0.12.1 lineage. A normal clone of the default branch now receives the v0.12.1 engineering baseline rather than the older snapshot.
+
+The promotion triggered an old v0.10 status workflow on `main`; its status-recording commit is historical CI bookkeeping and does not redefine the verified v0.12.1 release evidence below.
+
+## Physical UAT tracking
+
+GitHub issue #5, `v0.12.1 final physical UAT`, tracks the real-machine acceptance work that could not be truthfully substituted by CI.
+
+That issue remains useful as validation of the v0.12.1 baseline, but closing it alone will not close the 240-point UX Foundation contract.
 
 ## Previously proven intermediate release
 
@@ -33,7 +74,7 @@ Intermediate Windows release:
 
 That build proved clean install, installed-copy launch, uninstall preservation, real v0.12 -> v0.12.1 upgrade, and a running-process update scenario. It is superseded by the final-v2 release below.
 
-## Expanded full-checklist implementation
+## Expanded v0.12.1 full-checklist implementation
 
 The expanded source was reconstructed from the exact green v0.12.1 source artifact from run `32649590459`, then received the committed full-checklist and installer-hardening transforms.
 
@@ -53,6 +94,8 @@ Implemented areas include:
 - writeability/partial-install checks
 - repair mode
 - application-file snapshot and rollback helpers that exclude research-data areas
+
+These remain valuable foundations but should not be mistaken for completion of the new shell and information-architecture requirements in `AGENTS.md`.
 
 ## Full-checklist Windows gate history
 
@@ -157,16 +200,17 @@ The final-v2 workflow passed all of these gates:
 Maintenance matrix evidence recorded all scenarios as green.
 Rollback evidence recorded exact application-byte restoration and successful post-rollback maintenance.
 
-## Release rule
+## Current continuation point
 
-The engineering definition of done for v0.12.1 is now satisfied. The final installer is the artifact from run `32724433832`, not the earlier intermediate release.
+Begin **Trace UX Foundation Phase 1** from the verified v0.12.1 baseline on `main`.
 
-## Physical UAT boundary
+The first implementation target is production-state hygiene, Home and first launch. Prove that a genuinely fresh installed copy:
 
-Physical inspection on the user's own Windows display cannot be simulated by CI. The only remaining acceptance item is a short real-machine UAT pass for the installer and Data/Code/Themes/Analyse/Write workspaces at the user's actual Windows scaling and display conditions.
+- opens to Trace Home
+- contains no development/demo/fixture project
+- contains no phantom participant such as `P01`
+- does not show source-specific or transcript-specific controls without a real source
+- offers New Project, Open Project, Import Project and Recover from backup clearly
+- can create a short-form new project and land on a purposeful Project Overview
 
-Until that physical pass is performed, v0.12.1 should be described as **engineering-complete and awaiting physical UAT**, not as fully UAT-complete.
-
-## Continuation point
-
-No further engineering gate is required before physical UAT. Use the final artifact from run `32724433832` for the real-machine acceptance pass. If physical UAT reveals a defect, return to the affected checklist item, patch from the verified `trace-v0121` source lineage, and rerun the relevant source and Windows release gates before replacing the final artifact.
+Preserve the existing v0.12.1 research and data-preservation gates while the shell is rebuilt.
