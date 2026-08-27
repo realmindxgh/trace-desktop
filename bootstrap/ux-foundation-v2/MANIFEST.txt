@@ -1,12 +1,14 @@
-Trace UX Foundation v2 overlay
+Trace UX Foundation v2 deterministic transform
 baseline_run=32723424461
 baseline_artifact=Trace-v0.12.1-Full-Checklist-Green-Source
 baseline_artifact_digest=sha256:dad38e53e5149190d97c65762cb4362accc84467f38c1b59c2aa97216cca123e
-overlay_archive=trace-ux-foundation-v2-phase1-3.tar.xz
-overlay_bytes=79348
-overlay_sha256=4867fd8d17f7f7b49b7c388eebc416e604475cb424c27f6b2bc2e9def702f2aa
-base64_length=105800
-parts=5
-part_size=24000
+transform_archive=ux-foundation-v2-transform.py.xz
+transform_xz_bytes=16500
+transform_xz_sha256=c8325e9f6875c1bef1b994397cbcaf05d1df1a8356125bf4bc30065bcb6906b8
+transform_base64_length=22000
+transform_parts=2
+transform_raw_bytes=63674
+transform_raw_sha256=38da0f8032f491eebfab4c89b5b98fd5c17ac552de16b11f9400002337aaa636
 changed_files=src/app.js,src/styles.css,src-tauri/src/models.rs,src-tauri/src/db.rs,src-tauri/src/lib.rs,tests/ux_foundation_v2_contract.py,tests/ux_foundation_v2.mjs
-scope=initial integrated implementation of master-contract phases 1-3 plus contextual AI/productivity/safety foundations from phases 6-7
+scope=integrated master-contract phases 1-3 plus contextual AI, command-palette, safety and settings foundations from phases 6-7
+replay=verified byte-for-byte against the locally tested candidate when applied to the exact baseline artifact
