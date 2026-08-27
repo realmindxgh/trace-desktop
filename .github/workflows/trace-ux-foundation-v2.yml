@@ -7,9 +7,12 @@ on:
       - '.github/workflows/trace-ux-foundation-v2.yml'
       - 'bootstrap/ux-foundation-v2/**'
       - 'ci/ux_v2_phase1_truth_hotfix.py'
+      - 'ci/ux_v2_phase2_shared_inspector_hotfix.py'
       - 'ci/ux_v2_phase4_data_hotfix.py'
       - 'ci/ux_v2_phase5_code_context_hotfix.py'
+      - 'ci/ux_v2_phase5_themes_write_hotfix.py'
       - 'ci/ux_v2_phase7_shortcuts_hotfix.py'
+      - 'ci/ux_v2_phase8_browser_hotfix.py'
       - 'docs/TRACE_UX_FOUNDATION_EXECUTION_PLAN.md'
   workflow_dispatch:
 
@@ -79,10 +82,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 4 Data contextual-workspace patch failed.' }
           python ../control/ci/ux_v2_phase5_code_context_hotfix.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 5 Code/Analyse contextual-navigation patch failed.' }
+          python ../control/ci/ux_v2_phase5_themes_write_hotfix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 5 Themes/Write contextual-navigation patch failed.' }
+          python ../control/ci/ux_v2_phase2_shared_inspector_hotfix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 2 shared inspector patch failed.' }
           python ../control/ci/ux_v2_phase7_shortcuts_hotfix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 7 keyboard-productivity patch failed.' }
+          python ../control/ci/ux_v2_phase8_browser_hotfix.py
           $transformExit=$LASTEXITCODE
           Pop-Location
-          if ($transformExit -ne 0) { throw 'Phase 7 keyboard-productivity patch failed.' }
+          if ($transformExit -ne 0) { throw 'Phase 8 live-browser coverage patch failed.' }
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -198,7 +207,7 @@ jobs:
           baseline_run=32723424461
           result=${{ job.status }}
           workflow=Trace UX Foundation v2 gate
-          verification=exact_v0121_baseline+deterministic_ux_transform+phase1_state_truth+phase4_data_context+phase5_code_analyse_context+phase7_shortcuts+ux_static_contract+all_carried_research_contracts+both_frontends+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
+          verification=exact_v0121_baseline+deterministic_ux_transform+phase1_state_truth+phase2_shared_inspector+phase4_data_context+phase5_code_analyse_context+phase5_themes_write_context+phase7_shortcuts+phase8_live_context_browser+ux_static_contract+all_carried_research_contracts+both_frontends+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
           "@ | Set-Content build-status/ux-foundation-v2.txt
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
