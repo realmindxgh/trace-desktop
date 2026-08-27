@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 app_path=Path('src/app.js')
 css_path=Path('src/styles.css')
@@ -56,4 +57,8 @@ for assertion in [
 ]:
     if assertion not in contract: contract+='\n'+assertion
 contract_path.write_text(contract,encoding='utf-8')
-print('Non-blocking audio/video import transcription choice applied')
+
+# This is the last UI transform in the visual-evidence chain, so install the approved visual
+# comparator only after all final CSS/render changes have been applied.
+runpy.run_path('../control/ci/ux_v2_phase8_visual_regression_hotfix.py',run_name='__main__')
+print('Non-blocking audio/video import transcription choice and approved visual-regression gate applied')
