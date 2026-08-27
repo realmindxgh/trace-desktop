@@ -10,8 +10,8 @@ const out=path.resolve('test-artifacts/ux-visuals');
 fs.mkdirSync(out,{recursive:true});
 
 const refs=[
-  {id:'r1',codeId:'c1',sourceId:'s1',coderId:'u1',segmentId:'seg1',text:'Access to support was difficult at first',participantId:'p1'},
-  {id:'r2',codeId:'c2',sourceId:'s1',coderId:'u1',segmentId:'seg1',text:'peer help changed the experience',participantId:'p1'},
+  {id:'r1',codeId:'c1',sourceId:'s1',coderId:'u1',segmentId:'seg1',line:0,text:'Access to support was difficult at first',participantId:'p1'},
+  {id:'r2',codeId:'c2',sourceId:'s1',coderId:'u1',segmentId:'seg1',line:0,text:'peer help changed the experience',participantId:'p1'},
 ];
 const fixture={
   project:{id:'visual',title:'Community support interview study',methodology:'Reflexive Thematic Analysis',codingMode:'manual',researchQuestions:['How do participants describe access to support?'],researchQuestionRecords:[{id:'rq1',position:0,text:'How do participants describe access to support?'}]},
@@ -50,6 +50,7 @@ async function snap(name,setup,arg,viewport={width:1600,height:900},deviceScaleF
       focusables:[...document.querySelectorAll('button,input,textarea,[tabindex="0"]')].filter(visible).length,
       minimumVisibleFontPx:sizes.length?Math.min(...sizes):0,
       codingStripes:document.querySelectorAll('.coding-stripes i').length,
+      codingTitles:[...document.querySelectorAll('.coding-stripes i')].map(i=>i.getAttribute('title')||i.textContent?.trim()||''),
       inspectorVisible:[...document.querySelectorAll('.inspector')].some(visible),
       contextPaneVisible:[...document.querySelectorAll('.context-pane')].some(visible),
     };
@@ -68,7 +69,8 @@ const screens={};
 for(const [ix,section] of ['Data','Code','Themes','Analyse','Write'].entries()){
   screens[section]=await snap(`${String(ix+3).padStart(2,'0')}-${section.toLowerCase()}`,({fixture,section})=>{const x=JSON.parse(JSON.stringify(fixture));x.activeSection=section;localStorage.setItem('trace-v010-state',JSON.stringify(x));},{fixture,section});
 }
-if((screens.Code?.codingStripes||0)<2)failures.push('04-code: populated Code evidence did not visibly show both coding markers');
+const visibleCodeNames=new Set(screens.Code?.codingTitles||[]);
+for(const expected of ['Access barriers','Peer support'])if(!visibleCodeNames.has(expected))failures.push(`04-code: populated Code evidence did not visibly show ${expected}`);
 for(const section of ['Data','Themes','Analyse','Write']){
   if(!screens[section]?.contextPaneVisible)failures.push(`${section}: contextual pane is not visible in deterministic evidence`);
   if(!screens[section]?.inspectorVisible)failures.push(`${section}: inspector is not visible in deterministic evidence`);
