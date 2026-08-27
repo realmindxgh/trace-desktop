@@ -4,7 +4,9 @@ Cross-platform qualitative research workspace. Windows is the first shipping tar
 
 ## Current development status
 
-Trace **v0.12.1: UX and Installer Hardening** has completed its automated Windows source and release verification. The verified Windows release is now awaiting real-machine user acceptance, especially interactive maintenance-mode and visual/readability checks.
+Trace **v0.12.1: UX and Installer Hardening** has completed its automated Windows source and release verification. The verified v0.12.1 line has been promoted to `main`.
+
+The only remaining acceptance item is real-machine physical UAT on the user's actual Windows display and scaling. That final pass is tracked in [issue #5](https://github.com/realmindxgh/trace-desktop/issues/5) and covers the installer maintenance flow plus the Data, Code, Themes, Analyse, and Write workspaces.
 
 Before changing application code, installer code, CI, or release behavior, read [`AGENTS.md`](AGENTS.md). It contains the execution plan, priorities, acceptance criteria, testing matrix, release rules, and handoff requirements for coding agents and contributors.
 
