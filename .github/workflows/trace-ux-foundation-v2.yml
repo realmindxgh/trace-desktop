@@ -14,8 +14,11 @@ on:
       - 'ci/ux_v2_phase5_themes_write_hotfix.py'
       - 'ci/ux_v2_phase7_shortcuts_hotfix.py'
       - 'ci/ux_v2_phase7_trust_hotfix.py'
+      - 'ci/ux_v2_phase7_consequence_hotfix.py'
       - 'ci/ux_v2_phase8_browser_hotfix.py'
       - 'ci/ux_v2_phase8_journey_hotfix.py'
+      - 'ci/ux_v2_phase8_trust_browser_hotfix.py'
+      - 'ci/ux_v2_phase8_visual_evidence_hotfix.py'
       - 'docs/TRACE_UX_FOUNDATION_EXECUTION_PLAN.md'
   workflow_dispatch:
 
@@ -95,12 +98,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 7 keyboard-productivity patch failed.' }
           python ../control/ci/ux_v2_phase7_trust_hotfix.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 7 trust/error-state patch failed.' }
+          python ../control/ci/ux_v2_phase7_consequence_hotfix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 7 destructive-consequence patch failed.' }
           python ../control/ci/ux_v2_phase8_browser_hotfix.py
           if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 8 contextual browser coverage patch failed.' }
           python ../control/ci/ux_v2_phase8_journey_hotfix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 8 researcher-journey coverage patch failed.' }
+          python ../control/ci/ux_v2_phase8_trust_browser_hotfix.py
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Phase 8 trust browser coverage patch failed.' }
+          python ../control/ci/ux_v2_phase8_visual_evidence_hotfix.py
           $transformExit=$LASTEXITCODE
           Pop-Location
-          if ($transformExit -ne 0) { throw 'Phase 8 researcher-journey coverage patch failed.' }
+          if ($transformExit -ne 0) { throw 'Phase 8 visual-evidence patch failed.' }
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -140,7 +149,7 @@ jobs:
           Pop-Location
           if ($setupBuild -ne 0) { throw 'Trace Setup frontend build failed.' }
 
-      - name: Browser UX, first-launch, journey and DPI gates
+      - name: Browser UX, journey, trust, visual evidence and DPI gates
         shell: pwsh
         working-directory: work
         run: |
@@ -153,11 +162,21 @@ jobs:
             Start-Sleep -Seconds 3
             node tests/ux_foundation_v2.mjs
             if ($LASTEXITCODE -ne 0) { throw 'UX Foundation browser contract failed.' }
+            node tests/ux_foundation_visuals.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'UX visual evidence gate failed.' }
             node tests/v0121_layout.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Carried viewport/DPI matrix failed.' }
           } finally {
             if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
           }
+
+      - name: Upload deterministic UX visual evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-UX-Foundation-v2-Visual-Evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: work/test-artifacts/ux-visuals/**
 
       - name: Native Rust compile and tests
         shell: pwsh
@@ -216,7 +235,7 @@ jobs:
           baseline_run=32723424461
           result=${{ job.status }}
           workflow=Trace UX Foundation v2 gate
-          verification=exact_v0121_baseline+deterministic_ux_transform+phase1_state_truth+phase1_recent_project_recovery+phase2_shared_inspector+phase4_data_context+phase5_code_analyse_context+phase5_themes_write_context+phase7_shortcuts+phase7_human_errors_and_research_protection+phase8_live_context_browser+phase8_researcher_journey+ux_static_contract+all_carried_research_contracts+both_frontends+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
+          verification=exact_v0121_baseline+deterministic_ux_transform+phase1_state_truth+phase1_recent_project_recovery+phase2_shared_inspector+phase4_data_context+phase5_code_analyse_context+phase5_themes_write_context+phase7_shortcuts+phase7_human_errors_and_research_protection+phase7_complete_destructive_consequences+phase8_live_context_browser+phase8_researcher_journey+phase8_rendered_trust_browser+phase8_visual_evidence+ux_static_contract+all_carried_research_contracts+both_frontends+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
           "@ | Set-Content build-status/ux-foundation-v2.txt
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
