@@ -1,0 +1,7 @@
+run_id=33052828945
+run_number=1
+source_sha=88b10f16289b0c17d28dc62f391d4d2cda6a78a4
+baseline_run=32723424461
+result=failure
+workflow=Trace UX Foundation v2 gate
+verification=exact_v0121_baseline+ux_static_contract+all_carried_research_contracts+frontend_build+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
