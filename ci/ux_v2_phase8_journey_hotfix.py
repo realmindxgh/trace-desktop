@@ -28,7 +28,7 @@ async function researcherJourney(){
   await page.click('#tool-code');
   if(await page.locator('[data-mode="manual"]').count())await page.click('[data-mode="manual"]');
   await page.locator('[data-code]').first().click();
-  if(!await page.locator('.coding-stripe').count())errors.push('journey coding did not attach visibly to the transcript');
+  if(!await page.locator('.coding-stripes i[title="Access barriers"]').count())errors.push('journey coding did not attach the selected code visibly to the transcript');
   await page.keyboard.press('Control+Shift+M');
   await page.fill('#me-name','Access memo');
   await page.fill('#me-body','Access difficulty appears before peer support changes the experience.');
@@ -60,7 +60,7 @@ async function researcherJourney(){
     p.write_text(s,encoding='utf-8')
 
 check=p.read_text(encoding='utf-8')
-for required in ('async function researcherJourney()','Researcher journey','Access barriers','Support pathways','resume-current','data-mode="manual"'):
+for required in ('async function researcherJourney()','Researcher journey','Access barriers','Support pathways','resume-current','data-mode="manual"','coding-stripes i[title="Access barriers"]'):
     if required not in check:
         raise SystemExit(f'Researcher journey gate missing: {required}')
 print('End-to-end researcher journey browser gate injected')
