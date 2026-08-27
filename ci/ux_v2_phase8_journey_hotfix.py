@@ -26,6 +26,7 @@ async function researcherJourney(){
   await page.click('#ce-save');
   await page.locator('.transcript-line p').first().evaluate(el=>{const node=el.firstChild;if(!node)return;const range=document.createRange();range.setStart(node,0);range.setEnd(node,Math.min(17,node.textContent.length));const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);el.closest('#transcript-scroll')?.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}));});
   await page.click('#tool-code');
+  if(await page.locator('[data-mode="manual"]').count())await page.click('[data-mode="manual"]');
   await page.locator('[data-code]').first().click();
   if(!await page.locator('.coding-stripe').count())errors.push('journey coding did not attach visibly to the transcript');
   await page.keyboard.press('Control+Shift+M');
@@ -59,7 +60,7 @@ async function researcherJourney(){
     p.write_text(s,encoding='utf-8')
 
 check=p.read_text(encoding='utf-8')
-for required in ('async function researcherJourney()','Researcher journey','Access barriers','Support pathways','resume-current'):
+for required in ('async function researcherJourney()','Researcher journey','Access barriers','Support pathways','resume-current','data-mode="manual"'):
     if required not in check:
         raise SystemExit(f'Researcher journey gate missing: {required}')
 print('End-to-end researcher journey browser gate injected')
