@@ -69,6 +69,15 @@ Gate: automated source/browser/native/Windows gates green, followed by physical 
 
 This journey must be exercised with realistic transcripts, PDFs, spreadsheets and media. Empty/demo fixtures alone are not sufficient for final acceptance.
 
+## Final 240-point closure audit checkpoint
+
+The item-by-item audit found and closed two late structural gaps before Windows acceptance:
+
+- `remember my layout` and `resume exactly where I was` are now separate real preferences rather than unused state fields; layout memory preserves pane geometry while exact-workspace resume controls transient source/workspace restoration independently.
+- Trace now has one reusable, keyboard-accessible desktop context-menu standard for high-frequency source, code, theme and collection actions rather than relying only on permanent buttons.
+
+The final source gate must therefore reconstruct and test the full chain including stable save-state copy, human/actionable error completion, source-identity geometry, desktop context menus and workspace-memory semantics. No Windows acceptance pointer may be created from an earlier green run.
+
 ## Progress rule
 
 `PROGRESS.md` is the live ledger. Every material phase completion must record the branch/commit, tests, CI run IDs, artifacts, known defects and exact continuation point. The UX programme is not complete merely because the v0.12.1 engineering checklist remains green.
