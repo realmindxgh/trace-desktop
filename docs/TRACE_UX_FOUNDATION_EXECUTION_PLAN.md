@@ -31,7 +31,7 @@ Gate: one coherent navigation system, no competing dock, no ambiguous active mod
 
 Establish shared spacing, type, surface, radius, control and pane rules. Remove dashboard-within-a-window styling, excessive borders and decorative competition. Keep all meaningful text readable at realistic Windows resolutions and scaling.
 
-Gate: shared tokens and primitives, no important text below the readability floor, no root horizontal overflow or clipped primary navigation at the required matrix.
+Gate: shared tokens and primitives, no important text below the readability floor, no root horizontal overflow or clipped primary navigation at the required matrix. `docs/TRACE_DESIGN_SYSTEM.md` is the normative design-system contract for future work.
 
 ### Phase 4. Data, import, source and participant workflows
 
@@ -63,6 +63,8 @@ Expand CI from engineering correctness to product truth. Test first launch, empt
 
 Gate: automated source/browser/native/Windows gates green, followed by physical UAT on the actual user machine for visual/readability and real-file end-to-end acceptance.
 
+The visual gate must combine DOM/layout assertions with an explicit approved perceptual baseline. The baseline is derived from approved UX evidence and may never regenerate itself during CI. Intentional visual redesign requires an explicit reviewed baseline update.
+
 ## Required end-to-end acceptance journey
 
 `create project -> import data -> organise participants -> code passages -> create notes/memos -> build themes -> analyse -> write/export -> close -> reopen -> recover/backup`
@@ -76,10 +78,15 @@ The item-by-item audit found and closed the late structural gaps before Windows 
 - `remember my layout` and `resume exactly where I was` are separate real preferences. Layout memory preserves pane geometry while exact-workspace resume controls transient source/workspace restoration independently.
 - Trace has one reusable, keyboard-accessible desktop context-menu standard for high-frequency source, code, theme and collection actions rather than relying only on permanent buttons.
 - Audio/video import explicitly offers `Transcribe now` and `Add without transcription` as non-blocking next actions after the media is safely imported. Local transcription remains optional and never blocks multi-file ingestion.
-- Application Settings now includes global default transcription language and local Whisper model controls; project/source transcription can override those defaults.
-- Project Settings now contains participant/case terminology, a direct participant/attribute management entry point, backup settings and project-specific findings export options. The export prefix changes the generated filename and the evidence-appendix preference changes export contents.
+- Application Settings includes global default transcription language and local Whisper model controls; project/source transcription can override those defaults.
+- Project Settings contains participant/case terminology, a direct participant/attribute management entry point, backup settings and project-specific findings export options. The export prefix changes the generated filename and the evidence-appendix preference changes export contents.
+- Completed import batches now present an aggregate outcome and next actions: `Open first source`, `Review participants`, and `Begin coding` where applicable.
+- The first successful coding action provides one restrained orientation hint toward the next research stage rather than gamifying progress.
+- Application Settings owns appearance/interface size and shortcut discoverability rather than scattering those application-wide controls through project screens.
+- `docs/TRACE_DESIGN_SYSTEM.md` formally defines typography, spacing, radii, surfaces, borders, icons, pane behaviour, empty/loading/error states, dialogs, context menus, responsive rules, accessibility and the visual-regression change rule.
+- Phase 8 now stages a fixed perceptual visual baseline for Home, empty project, Data, Code, Themes, Analyse, Write and the 1366x768/125% Code case. CI compares current screenshots to that approved baseline using a bounded perceptual fingerprint and writes a regression receipt; the reference cannot update itself.
 
-The audited source gate must reconstruct and test the full chain including stable save-state copy, actionable errors, source-identity geometry, desktop context menus, workspace-memory semantics, explicit media-transcription choice, application transcription defaults and project-specific participant/export configuration. No Windows acceptance pointer may be created from an earlier green run.
+The final source gate must reconstruct and test the full chain including stable save-state copy, actionable errors, source-identity geometry, desktop context menus, workspace-memory semantics, explicit media-transcription choice, application transcription defaults, project-specific participant/export configuration, import completion actions, first-coding guidance and approved visual regression. No Windows acceptance pointer may be created from an earlier green run.
 
 ## Progress rule
 
