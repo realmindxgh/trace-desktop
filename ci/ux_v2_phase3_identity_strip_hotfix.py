@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 app_path=Path('src/app.js')
 css_path=Path('src/styles.css')
@@ -71,9 +72,12 @@ if visual_path.exists():
         raise SystemExit('Could not locate visual geometry assertion anchor')
     visual_path.write_text(visual,encoding='utf-8')
 
+# Keep save timing in contextual details rather than turning the global topbar into a stale-age ticker.
+runpy.run_path('../control/ci/ux_v2_phase3_save_status_hotfix.py',run_name='__main__')
+
 check=app_path.read_text(encoding='utf-8')
 styles=css_path.read_text(encoding='utf-8')
 for required in ('has-workspace-identity','Open source context'):
     if required not in check: raise SystemExit(f'Identity strip app contract missing: {required}')
 if marker not in styles: raise SystemExit('Identity strip CSS marker missing')
-print('Source identity strip and document-tab overlap guard applied')
+print('Source identity strip, document-tab overlap guard and stable Saved status applied')
