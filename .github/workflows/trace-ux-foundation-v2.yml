@@ -41,25 +41,37 @@ jobs:
             if (!(Test-Path $required)) { throw "Verified baseline is incomplete: $required" }
           }
 
-      - name: Reconstruct UX Foundation overlay
-        shell: pwsh
-        run: |
-          $parts=Get-ChildItem control/bootstrap/ux-foundation-v2/part* | Sort-Object Name
-          if ($parts.Count -ne 5) { throw "Expected 5 UX overlay parts, found $($parts.Count)." }
-          $base64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
-          if ($base64.Length -ne 105800) { throw "UX overlay base64 length mismatch: $($base64.Length)" }
-          $archive=Join-Path $env:RUNNER_TEMP 'trace-ux-foundation-v2.tar.xz'
-          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($base64))
-          if ((Get-Item $archive).Length -ne 79348) { throw "UX overlay size mismatch: $((Get-Item $archive).Length)" }
-          $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '4867fd8d17f7f7b49b7c388eebc416e604475cb424c27f6b2bc2e9def702f2aa') { throw "UX overlay SHA mismatch: $hash" }
-          tar -xJf $archive -C work
-          if ($LASTEXITCODE -ne 0) { throw 'Could not apply UX Foundation overlay.' }
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+
+      - name: Reconstruct and apply deterministic UX transform
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/ux-foundation-v2/transform* | Sort-Object Name
+          if ($parts.Count -ne 2) { throw "Expected 2 UX transform parts, found $($parts.Count)." }
+          $base64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($base64.Length -ne 22000) { throw "UX transform base64 length mismatch: $($base64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'ux-foundation-v2-transform.py.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($base64))
+          if ((Get-Item $archive).Length -ne 16500) { throw "UX transform xz size mismatch: $((Get-Item $archive).Length)" }
+          $xzHash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($xzHash -ne 'c8325e9f6875c1bef1b994397cbcaf05d1df1a8356125bf4bc30065bcb6906b8') { throw "UX transform xz SHA mismatch: $xzHash" }
+          $script=Join-Path $env:RUNNER_TEMP 'ux_foundation_v2_transform.py'
+          $env:TRACE_UX_TRANSFORM_XZ=$archive
+          $env:TRACE_UX_TRANSFORM_RAW=$script
+          python -c "import lzma,os,pathlib; src=pathlib.Path(os.environ['TRACE_UX_TRANSFORM_XZ']); dst=pathlib.Path(os.environ['TRACE_UX_TRANSFORM_RAW']); dst.write_bytes(lzma.decompress(src.read_bytes()))"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decompress deterministic UX transform.' }
+          if ((Get-Item $script).Length -ne 63674) { throw "UX transform raw size mismatch: $((Get-Item $script).Length)" }
+          $rawHash=(Get-FileHash $script -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($rawHash -ne '38da0f8032f491eebfab4c89b5b98fd5c17ac552de16b11f9400002337aaa636') { throw "UX transform raw SHA mismatch: $rawHash" }
+          Push-Location work
+          python $script
+          $transformExit=$LASTEXITCODE
+          Pop-Location
+          if ($transformExit -ne 0) { throw 'Deterministic UX transform failed.' }
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
@@ -168,7 +180,7 @@ jobs:
           baseline_run=32723424461
           result=${{ job.status }}
           workflow=Trace UX Foundation v2 gate
-          verification=exact_v0121_baseline+ux_static_contract+all_carried_research_contracts+frontend_build+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
+          verification=exact_v0121_baseline+deterministic_ux_transform+ux_static_contract+all_carried_research_contracts+frontend_build+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
           "@ | Set-Content build-status/ux-foundation-v2.txt
           git config user.name 'trace-build-bot'
           git config user.email 'actions@users.noreply.github.com'
