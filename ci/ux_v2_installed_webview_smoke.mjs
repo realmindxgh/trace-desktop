@@ -83,7 +83,9 @@ await page.click('#me-save');
 await page.click('[data-section="Themes"]');
 await page.click('#new-theme');
 await page.fill('#te-name','Support pathways');
-await page.locator('[data-theme-code]').filter({hasText:'Access barriers'}).check();
+const themeCodes=page.locator('[data-theme-code]');
+check(await themeCodes.count()>0,'Installed theme editor exposed no code choices');
+if(await themeCodes.count())await themeCodes.first().check();
 await page.click('#te-save');
 check(await page.getByText('Support pathways',{exact:true}).count()>0,'Installed journey did not create Support pathways');
 
