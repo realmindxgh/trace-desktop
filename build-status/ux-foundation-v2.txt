@@ -1,7 +1,7 @@
-run_id=33053447319
-run_number=6
-source_sha=f8010b23da0af2e4a42e9392ef1a9b7b743da361
+run_id=33053479479
+run_number=7
+source_sha=3b842b1184c8c40544360492ab7b5a2efb032ef7
 baseline_run=32723424461
-result=failure
+result=cancelled
 workflow=Trace UX Foundation v2 gate
-verification=exact_v0121_baseline+ux_static_contract+all_carried_research_contracts+frontend_build+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
+verification=exact_v0121_baseline+deterministic_ux_transform+ux_static_contract+all_carried_research_contracts+frontend_build+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
