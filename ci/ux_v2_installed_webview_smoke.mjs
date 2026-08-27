@@ -7,15 +7,30 @@ const exe=process.env.TRACE_INSTALLED_EXE;
 const playwrightRoot=process.env.TRACE_PLAYWRIGHT_ROOT;
 const userData=process.env.TRACE_WEBVIEW_USER_DATA;
 const evidenceDir=process.env.TRACE_INSTALLED_EVIDENCE_DIR||path.resolve('installed-ux-evidence');
-const importFile=process.env.TRACE_INSTALLED_IMPORT_FILE;
-const surveyFile=process.env.TRACE_INSTALLED_SURVEY_FILE;
-const pdfFile=process.env.TRACE_INSTALLED_PDF_FILE;
-const audioFile=process.env.TRACE_INSTALLED_AUDIO_FILE;
+let importFile=process.env.TRACE_INSTALLED_IMPORT_FILE;
+let surveyFile=process.env.TRACE_INSTALLED_SURVEY_FILE;
+let pdfFile=process.env.TRACE_INSTALLED_PDF_FILE;
+let audioFile=process.env.TRACE_INSTALLED_AUDIO_FILE;
+fs.mkdirSync(evidenceDir,{recursive:true});
+
+// Generate the additional acceptance files on the runner itself so the exact installed-app gate
+// always exercises a spreadsheet, searchable PDF and decodable media without network fixtures.
+if(!surveyFile||!pdfFile||!audioFile){
+  const fixtureDir=path.join(evidenceDir,'fixtures');
+  const generator=path.resolve(process.cwd(),'control','ci','ux_v2_make_acceptance_fixtures.py');
+  if(!fs.existsSync(generator))throw new Error(`Acceptance fixture generator is missing: ${generator}`);
+  const generated=spawnSync('python',[generator],{env:{...process.env,TRACE_ACCEPTANCE_FIXTURE_DIR:fixtureDir},encoding:'utf8'});
+  if(generated.status!==0)throw new Error(`Acceptance fixture generation failed: ${generated.stderr||generated.stdout}`);
+  importFile=importFile||path.join(fixtureDir,'interview.txt');
+  surveyFile=surveyFile||path.join(fixtureDir,'participants.xlsx');
+  pdfFile=pdfFile||path.join(fixtureDir,'evidence.pdf');
+  audioFile=audioFile||path.join(fixtureDir,'interview-audio.wav');
+}
 for(const [name,value] of Object.entries({TRACE_INSTALLED_EXE:exe,TRACE_PLAYWRIGHT_ROOT:playwrightRoot,TRACE_WEBVIEW_USER_DATA:userData,TRACE_INSTALLED_IMPORT_FILE:importFile,TRACE_INSTALLED_SURVEY_FILE:surveyFile,TRACE_INSTALLED_PDF_FILE:pdfFile,TRACE_INSTALLED_AUDIO_FILE:audioFile})){
   if(!value)throw new Error(`${name} is required.`);
   if(name!=='TRACE_PLAYWRIGHT_ROOT'&&name!=='TRACE_WEBVIEW_USER_DATA'&&!fs.existsSync(value))throw new Error(`${name} is missing: ${value}`);
 }
-fs.mkdirSync(userData,{recursive:true});fs.mkdirSync(evidenceDir,{recursive:true});
+fs.mkdirSync(userData,{recursive:true});
 const requireFromSource=createRequire(path.resolve(playwrightRoot,'package.json'));
 const { chromium }=requireFromSource('playwright');
 
