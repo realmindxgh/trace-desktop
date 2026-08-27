@@ -71,12 +71,15 @@ This journey must be exercised with realistic transcripts, PDFs, spreadsheets an
 
 ## Final 240-point closure audit checkpoint
 
-The item-by-item audit found and closed two late structural gaps before Windows acceptance:
+The item-by-item audit found and closed the late structural gaps before Windows acceptance:
 
-- `remember my layout` and `resume exactly where I was` are now separate real preferences rather than unused state fields; layout memory preserves pane geometry while exact-workspace resume controls transient source/workspace restoration independently.
-- Trace now has one reusable, keyboard-accessible desktop context-menu standard for high-frequency source, code, theme and collection actions rather than relying only on permanent buttons.
+- `remember my layout` and `resume exactly where I was` are separate real preferences. Layout memory preserves pane geometry while exact-workspace resume controls transient source/workspace restoration independently.
+- Trace has one reusable, keyboard-accessible desktop context-menu standard for high-frequency source, code, theme and collection actions rather than relying only on permanent buttons.
+- Audio/video import explicitly offers `Transcribe now` and `Add without transcription` as non-blocking next actions after the media is safely imported. Local transcription remains optional and never blocks multi-file ingestion.
+- Application Settings now includes global default transcription language and local Whisper model controls; project/source transcription can override those defaults.
+- Project Settings now contains participant/case terminology, a direct participant/attribute management entry point, backup settings and project-specific findings export options. The export prefix changes the generated filename and the evidence-appendix preference changes export contents.
 
-The final source gate must therefore reconstruct and test the full chain including stable save-state copy, human/actionable error completion, source-identity geometry, desktop context menus and workspace-memory semantics. No Windows acceptance pointer may be created from an earlier green run.
+The audited source gate must reconstruct and test the full chain including stable save-state copy, actionable errors, source-identity geometry, desktop context menus, workspace-memory semantics, explicit media-transcription choice, application transcription defaults and project-specific participant/export configuration. No Windows acceptance pointer may be created from an earlier green run.
 
 ## Progress rule
 
