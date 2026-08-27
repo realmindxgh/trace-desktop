@@ -41,14 +41,34 @@ async function keyboardProductivity(){
   if(!await page.locator('.trace-ai-modal').filter({hasText:'Interview 02'}).count())errors.push('Trace AI is not contextual to the active source');
   await ctx.close();
 }
+async function contextualShell(){
+  const ctx=await browser.newContext({viewport:{width:1600,height:900}});
+  await ctx.addInitScript(()=>localStorage.setItem('trace-v010-state',JSON.stringify({project:{id:'p',title:'Inspector study',methodology:'RTA',codingMode:'manual',researchQuestions:['How do participants describe access?'],researchQuestionRecords:[{id:'rq1',text:'How do participants describe access?'}]},activeSection:'Data',dataContext:'sources',analysisTab:'matrix',writeTarget:{type:'research_question',id:'rq1'},participants:[{id:'P01',internalId:'p1',role:'Participant'}],importedSources:[{id:'s1',name:'Interview 01',kind:'text',participantId:'p1',segments:[{id:'a',speaker:'P01',text:'Access was difficult'}],codings:[]}],activeSourceId:'s1',openSourceTabs:['s1'],codes:[{id:'c1',name:'Access barriers',description:'',color:'#2e76ff'}],themes:[{id:'t1',name:'Uneven access',codeIds:['c1']}],codingRefs:[{id:'r1',sourceId:'s1',codeId:'c1',participantId:'p1',text:'Access was difficult'}],allCodingRefs:[{id:'r1',sourceId:'s1',codeId:'c1',participantId:'p1',text:'Access was difficult'}],memos:[],annotations:[],findingsSections:[],findingsEvidence:[],sourceProperties:[],sourceCollections:[],importQueue:[],backups:[],audit:[],mediaSelections:[],mediaCodings:[],mediaPayloads:{},savedAt:Date.now()})));
+  const page=await ctx.newPage();await page.goto(base,{waitUntil:'networkidle'});
+  if(!await page.locator('.mode-shell .mode-inspector').count())errors.push('Data workspace shared inspector missing');
+  if(!await page.locator('#right-resizer[aria-label="Resize inspector"]').count())errors.push('shared inspector resizer missing');
+  await page.click('[data-section="Themes"]');
+  if(!await page.locator('.themes-context-pane').count())errors.push('Themes contextual pane missing');
+  if(!await page.locator('.mode-inspector').filter({hasText:'Theme context'}).count())errors.push('Themes inspector context missing');
+  await page.click('[data-section="Analyse"]');
+  if(!await page.locator('.mode-inspector').filter({hasText:'Analysis context'}).count())errors.push('Analyse inspector context missing');
+  if(!await page.locator('[data-analysis-tab="matrix"]').count())errors.push('Analyse contextual navigation missing');
+  await page.click('[data-section="Write"]');
+  if(!await page.locator('.write-context-pane').count())errors.push('Write contextual outline missing');
+  if(!await page.locator('[data-write-target="research_question:rq1"]').count())errors.push('Write contextual research-question target missing');
+  if(!await page.locator('.mode-inspector').filter({hasText:'Writing context'}).count())errors.push('Write inspector context missing');
+  await page.click('#toggle-inspector');
+  if(!await page.locator('.mode-shell.right-collapsed').count())errors.push('shared inspector does not collapse');
+  await ctx.close();
+}
 '''
     if marker not in s:
         raise SystemExit('Browser test terminal marker not found')
-    s=s.replace(marker,add+'\nawait fresh();await emptyProject();await populated();await contextualData();await keyboardProductivity();await browser.close();',1)
+    s=s.replace(marker,add+'\nawait fresh();await emptyProject();await populated();await contextualData();await keyboardProductivity();await contextualShell();await browser.close();',1)
     p.write_text(s,encoding='utf-8')
 
 check=p.read_text(encoding='utf-8')
-for required in ('async function contextualData()','async function keyboardProductivity()','Ctrl+Shift+C','Alt+ArrowRight'):
+for required in ('async function contextualData()','async function keyboardProductivity()','async function contextualShell()','Ctrl+Shift+C','Alt+ArrowRight','Writing context','Resize inspector'):
     if required not in check:
         raise SystemExit(f'Expanded browser gate missing: {required}')
-print('Phase 8 browser gate expanded for contextual Data, Code and keyboard productivity')
+print('Phase 8 browser gate expanded for contextual Data, Code, Themes, Analyse, Write, inspector and keyboard productivity')
