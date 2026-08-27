@@ -74,10 +74,12 @@ if visual_path.exists():
 
 # Keep save timing in contextual details rather than turning the global topbar into a stale-age ticker.
 runpy.run_path('../control/ci/ux_v2_phase3_save_status_hotfix.py',run_name='__main__')
+# Finish the plain-language error migration after the trust helpers and consequence previews exist.
+runpy.run_path('../control/ci/ux_v2_phase7_error_completion_hotfix.py',run_name='__main__')
 
 check=app_path.read_text(encoding='utf-8')
 styles=css_path.read_text(encoding='utf-8')
 for required in ('has-workspace-identity','Open source context'):
     if required not in check: raise SystemExit(f'Identity strip app contract missing: {required}')
 if marker not in styles: raise SystemExit('Identity strip CSS marker missing')
-print('Source identity strip, document-tab overlap guard and stable Saved status applied')
+print('Source identity strip, document-tab overlap guard, stable Saved status and human errors applied')
