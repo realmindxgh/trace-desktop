@@ -1,124 +1,333 @@
 # Trace Desktop Agent Execution Guide
 
-This file is the primary execution guide for any coding agent, contributor, or automated development system working on Trace Desktop.
+This file is the primary product and execution contract for any coding agent, contributor, or automated development system working on Trace Desktop.
 
-Read this file before changing application code, installer code, CI, release controls, or UX. Treat it as the current implementation contract unless a newer explicit project instruction supersedes it.
+Read this file before changing application code, installer code, CI, release controls, product architecture, or UX.
 
-## 1. Current mission
+## Contract precedence
 
-The immediate target is **Trace v0.12.1: UX and Installer Hardening**.
+The **Trace UX Foundation Master Contract** below is the current product goal and has priority over older implementation guidance when there is a conflict.
 
-Do **not** begin major v0.13 AI work until the v0.12.1 acceptance gates in this file are complete.
+In particular, older instructions that describe the work as only a hardening pass, say the app shell should not be substantially redesigned, or require the existing bottom workspace dock to be preserved are historical v0.12.1 guidance and do **not** override this master contract.
 
-Trace already has a strong product architecture and a verified v0.12 Windows release. The present task is not a wholesale redesign. The task is to make the existing product reliable, readable, robust, easy to learn, comfortable for long research sessions, and safe to update over an existing installation.
+The research engine and proven research capabilities must be preserved. The application shell, information architecture, first-launch experience, navigation model, state presentation, and interaction language may be rebuilt as necessary to satisfy this contract.
 
-The product model to preserve is:
+The conceptual research journey remains important:
 
-`Data -> Code -> Themes -> Analyse -> Write`
+`Bring data in -> Organise -> Code evidence -> Develop themes -> Analyse patterns -> Write findings`
 
-The design should remain spacious and calm. Do not solve current problems by making the interface denser.
-
----
-
-## 2. Verified v0.12 baseline
-
-The v0.12 Windows release was successfully built and verified through the exact branded installer pipeline.
-
-Reference baseline:
-
-- Source gate run: `32638636953`
-- Final Windows release verification run: `32639353769`
-- Final workflow result: `success`
-- Release artifact: `Trace-v0.12-Exact-Verified-Windows-Release`
-- Verified branded installer SHA-256: `b4a5a69a889236c591f4aa3448e05927f5c6351c82a31b08970f8291ff00ba28`
-
-That successful pipeline verified:
-
-- green v0.12 source checkpoint
-- JavaScript and schema contracts
-- Rust compile and unit tests
-- native Tauri Windows build
-- generated NSIS payload
-- branded `TraceSetup.exe`
-- exact branded installation
-- installed `Trace.exe` hash equivalence with the native installer payload
-- launch of the installed copy
-- installed copy surviving the launch test
-- branded uninstall
-- preservation of a research-data sentinel after uninstall
-- release artifact creation
-
-This baseline must remain reproducible. v0.12.1 work must not regress the functionality already proven in v0.12.
+The current v0.12.1 engineering line is a verified baseline, not the end of the UX programme. See `PROGRESS.md` and `docs/v0121-checklist-status.md` for the exact engineering and installer evidence.
 
 ---
 
-## 3. Why v0.12.1 is required
+# TRACE UX FOUNDATION MASTER CONTRACT
 
-The verified clean-install pipeline exposed a gap once the installer was used on a real machine with an existing Trace installation.
+The following 240 items define the overall UX/UI target for Trace. Do not call the UX overhaul complete merely because individual pages look better or automated tests are green. The installed application must satisfy the whole researcher journey and the central product rules at the end of this list.
 
-Known release-blocking observations:
-
-1. The branded installer correctly detects an existing Trace installation and enters maintenance mode.
-2. The visible setup version is incorrectly shown as `0.9.0` instead of the current release version.
-3. Pressing **Update Trace** can fail at roughly 9 percent during **Checking this PC**.
-4. The failure UI reports only generic text such as **Setup stopped safely** and does not expose the real cause or an actionable recovery step.
-5. Therefore, clean installation is verified, but real in-place update or repair over an existing normal installation is not yet proven.
-
-Known application UX observations:
-
-1. Important text is too small throughout the app.
-2. The bottom workspace navigation overlaps page content.
-3. Blue and green decorative or SVG-like lines escape across the bottom of the UI.
-4. The right inspector clips the Memos tab and shows a horizontal scrollbar for its own primary navigation.
-5. The recovered-session notification overlaps the workspace awkwardly.
-6. The Data page presents too many equally prominent actions to a new user.
-7. The Code workspace has a weak dead-end empty state when no source is open.
-8. Missing participant metadata is shown as dangling punctuation and placeholder dashes.
-9. Some controls and helper text are sized for screenshots rather than long research sessions.
-10. Current layout robustness is insufficient across common Windows resolutions and DPI scaling levels.
-
-These are not cosmetic nice-to-haves. They directly affect readability, learnability, confidence, and update safety.
+1. **The first-launch experience is fundamentally wrong.** A newly installed application should not immediately drop the researcher into an unexplained coding workspace. Trace needs a deliberate first-launch experience.
+2. **Investigate why “Downloading Videos” appears immediately after installation.** If this is genuinely one of the user's previously saved projects, that is one thing. If it originated from development data, CI, a fixture, seed content or a reconstruction artefact, that is a production bug and all test data must be removed.
+3. **Investigate why `P01` appears when the project reports zero participants.** The screenshot says `Participants 0` while simultaneously displaying `P01`. Application state and displayed content must never contradict each other.
+4. **A fresh Trace installation should open to Trace Home.** It should not open directly to Data, Code or an arbitrary previously selected workspace unless the user explicitly chooses an auto-resume preference.
+5. **Create a proper Welcome screen for genuinely new users.** It should briefly explain what Trace is for and present obvious starting actions such as `New Project`, `Open Project` and `Import Project`.
+6. **Do not automatically inject a sample project.** If a sample research project exists, make `Try a sample project` an explicit optional action.
+7. **Provide `Recover from backup` on Home.** Recovery should be visible from the beginning because research projects can represent months of work.
+8. **Provide an optional Getting Started experience.** It should be lightweight rather than a compulsory multi-step tour.
+9. **A useful Getting Started checklist could cover project creation, first import, first code, first memo and first theme.** Once completed, it should disappear permanently.
+10. **Trace Home should remain useful after onboarding.** It should become the regular project launcher rather than a one-time welcome page.
+11. **Home should show recent projects.** Each project can show name, last opened date, source count and perhaps last modified status.
+12. **Home should offer New Project, Open Project, Import Project and Recover Project prominently.**
+13. **Add a preference such as `Resume my last project on startup`.** Power users can then bypass Home without forcing that behaviour on everyone.
+14. **Project creation should be short.** Do not force users through extensive methodological configuration before letting them work.
+15. **The essential New Project dialog should probably require only a project name and perhaps an optional description.**
+16. **Research methodology, institution, researcher name, study details and similar metadata should live in Project Settings and be editable later.**
+17. **An empty project should open to Project Overview, not Code.** The researcher should first see what exists in the project and what they can meaningfully do next.
+18. **Project Overview should have a purposeful empty state.** For example: `Your project is ready. Add research data to begin.`
+19. **The empty-project screen should offer clear actions such as Import documents, Import survey data, Transcribe audio/video and Import an existing qualitative project.**
+20. **Supported file types can appear beneath those import actions.** This helps users understand Trace's capabilities without making the interface busy.
+21. **Never render participant UI when there is no participant.** No fake avatar, `P`, `P01`, participant metadata or View Profile link should appear in an empty project.
+22. **Never render transcript controls when there is no transcript.** The transcript search bar should disappear or clearly disable itself until a text source is open.
+23. **Never show source-specific inspector content before a source exists.**
+24. **The current empty-state message `No matching sources` is incorrect when no search/filter has been performed.** It should say `No sources yet`.
+25. **Empty states throughout Trace should explain the next useful action.** Empty space should teach the product rather than simply announce absence.
+26. **No codes should produce guidance such as `Create your first code or code a passage to get started.`**
+27. **No themes should explain how themes emerge from organised codes.**
+28. **No analyses should present available analysis/query options.**
+29. **No writing documents should offer Create findings document, New report or Start from coded evidence.**
+30. **The application should always tell the truth about state.** Counts, selections, participant information, current source, inspector content and navigation state must all agree.
+31. **The current workspace contains far too much unused white space.** Most of the screen currently communicates nothing.
+32. **The main research material should dominate the application.** Once a transcript, document or PDF is open, that source should visually become the centre of Trace.
+33. **Trace currently gives too much visual importance to navigation chrome and too little to research content.**
+34. **The overall layout should move toward `Navigation rail | Context pane | Main workspace | Inspector`.**
+35. **Replace the giant floating bottom dock.** It is visually dominant, occupies content space and feels detached from the rest of the interface.
+36. **Data, Code, Themes, Analyse and Write are worth keeping as Trace's conceptual backbone.** The problem is their current presentation, not the model itself.
+37. **Move those major modes into a slim permanent left navigation rail.**
+38. **The navigation rail should clearly indicate the active mode.** There should never be ambiguity between something such as `Data / Sources / P01` and a separately highlighted `Code` button.
+39. **Do not maintain multiple competing navigation systems.** The current left sidebar, central breadcrumb and bottom dock all communicate location differently.
+40. **The second left pane should be contextual.** Its contents should change according to the selected major mode.
+41. **In Data, the context pane could contain Sources, Participants, Collections/Sets, Attributes and Imports.**
+42. **In Code, the context pane should become the code system/code tree.**
+43. **In Themes, it should show theme structures and relationships.**
+44. **In Analyse, it should show queries, analysis tools, saved analyses and results.**
+45. **In Write, it should show writing documents, findings sections, exports or generated evidence tables.**
+46. **The left Data panel currently feels unfinished.** Search, Sources, Import Source and Project Counts are not enough to form a mature information architecture.
+47. **`Sources 0 ▼` currently looks like a small website accordion rather than a serious research-data tree.**
+48. **The source tree should eventually support folders, collections, filtering, participant attributes, sorting and large-project navigation.**
+49. **The Project Counts card should not permanently occupy valuable sidebar space.** Four zeroes in a box are not actionable information.
+50. **Project statistics belong more naturally on Project Overview/Home or an optional dashboard.**
+51. **`Import source` is currently too visually weak despite being the most important action in an empty project.**
+52. **Import should become a proper workflow rather than one generic button.**
+53. **The Import experience should distinguish Documents, PDFs, Spreadsheets/Surveys, Audio/Video and REFI-QDA/project imports where appropriate.**
+54. **Drag and drop should be supported in the Data workspace.**
+55. **After import, Trace should clearly summarise what happened.** For example: `4 sources imported`, `3 participants detected`, `1 file needs attention`.
+56. **Import completion should offer meaningful next actions such as Open first source, Review participants or Begin coding.**
+57. **Audio/video transcription should become a first-class import workflow.**
+58. **Importing audio/video should offer `Transcribe now` and `Add without transcription`.**
+59. **Transcription UX should expose useful controls such as language, model, progress and perhaps speaker workflow when those capabilities exist.**
+60. **Local transcription should clearly state that processing happens locally.** That is a meaningful product advantage.
+61. **The participant header is currently awkward and unfinished.** `P`, another `P`, `Participant`, missing years of experience and another dash creates visual noise.
+62. **Do not render missing participant metadata as chains of em dashes.** Missing fields should usually disappear.
+63. **Participant profiles should only appear when actual data links a source to a participant.**
+64. **Participant information should be compact and secondary to the source being analysed.**
+65. **The source/document title should be visually prominent whenever a source is open.**
+66. **Trace should support a proper document-tab model.** Researchers will naturally work across several transcripts, PDFs and memos.
+67. **Tabs would give the application a more natural professional desktop workflow.**
+68. **Breadcrumbs should move out of the global application header and closer to the workspace they describe.**
+69. **The current breadcrumb floating in the middle of the top bar feels disconnected from the content.**
+70. **The right inspector is currently too narrow.**
+71. **The inspector should be resizable.** A default somewhere around 320–440 px would be more realistic, depending on available screen width.
+72. **The inspector should also be collapsible.** Researchers should be able to devote nearly the full window to documents when needed.
+73. **The inspector tabs should never require a horizontal scrollbar.** The screenshot's INFO / CODES / NOTES / MEM… strip is unacceptable for a desktop application.
+74. **Rename inspector tabs more naturally to Details, Codes, Notes and Memos.**
+75. **Counts should appear as small badges rather than becoming part of long tab labels.**
+76. **On narrower windows, low-priority inspector items can move into a More menu rather than creating horizontal scrolling.**
+77. **Inspector content must reflect the actual currently selected source, participant, code or theme.**
+78. **The global top bar currently mixes too many unrelated responsibilities.**
+79. **Simplify the top bar to project identity/switcher on the left, optional global search or command palette centrally, and save/settings/account controls on the right.**
+80. **The current project title block uses too much horizontal space.**
+81. **`Downloading Videos / Qualitative Content Analysis` should become a more compact project switcher/header presentation.**
+82. **If `Qualitative Content Analysis` is interactive, the current tiny dropdown indicator is too subtle.**
+83. **Undo and redo should become contextual rather than permanently prominent when unavailable.**
+84. **The save-state indicator is useful but should be cleaner.** `✓ Saved` is stronger than a tiny `Saved 9s ago`.
+85. **Clicking or hovering over save state could reveal precise save time, project location and backup information.**
+86. **Data confidence should become a deliberate UX feature because Trace handles valuable research projects.**
+87. **Show autosave and backup status somewhere reassuring but unobtrusive.**
+88. **Project Home or a Protection area could show Autosave on, last backup time and Restore backup.**
+89. **Separate Project Settings from Trace/Application Settings.**
+90. **Project Settings should hold project metadata, research details, participant configuration, project backup settings and project-specific export options.**
+91. **Application Settings should hold theme, interface size, shortcuts, default transcription settings, update behaviour and similar global preferences.**
+92. **The typography across the screenshot is too small.**
+93. **This needs a complete typography system, not isolated CSS overrides.**
+94. **Normal interface body text should generally live around a readable 15–16 px equivalent at standard scaling.**
+95. **Secondary labels should still remain clearly readable, perhaps around 13–14 px rather than tiny dashboard microcopy.**
+96. **Transcript/document reading text should be larger again, probably around 16–18 px depending on font and line height.**
+97. **Add an interface density/size preference such as Compact, Comfortable and Large.**
+98. **Do not make users rely solely on Windows display scaling to fix Trace's own typography.**
+99. **Strengthen visual hierarchy.** At present headings, metadata, controls, labels and document content do not establish a convincing order of importance.
+100. **The current interface has too many outlines.** App shell, panels, cards, search controls and other elements are all separated using pale borders.
+101. **Use spacing, surface changes and typography more often than borders.**
+102. **Reserve bordered cards for genuinely self-contained information.**
+103. **There are too many rounded rectangles.** Rounded corners have become a default decoration instead of a structural tool.
+104. **Reduce excessive corner radii and apply them only where they help hierarchy.**
+105. **Remove the large rounded container surrounding almost the entire application.** Trace is already inside a native Windows window.
+106. **Do not simulate another browser/dashboard window inside the Windows application.**
+107. **The current visual language feels too much like a web dashboard embedded inside a desktop shell.**
+108. **Move Trace toward a genuine desktop research-tool aesthetic rather than SaaS-dashboard styling.**
+109. **The Windows title bar already says Trace while the app content immediately repeats the Trace brand.** Reduce unnecessary double-branding.
+110. **The giant navy navigation capsule and the delicate white workspace currently look as though they belong to different design systems.**
+111. **Create one coherent design system across navigation, panels, controls, tabs, menus and content surfaces.**
+112. **The strange coloured blue/green lines visible across the bottom of the workspace need investigation.** If they are decorative, remove them. If they are rendering artefacts, fix the rendering bug.
+113. **Nothing decorative should cross underneath or through the workspace in a professional research application.**
+114. **AI currently receives disproportionate visual emphasis.**
+115. **The sparkle button is more visually prominent than the core research workflow despite having no label.**
+116. **Give AI a clear name such as `Trace AI` or `Assistant`.**
+117. **Place AI naturally within the left navigation architecture instead of presenting it as a glowing mystery control.**
+118. **AI should augment the current task rather than behave like a disconnected destination.**
+119. **Inside a transcript, AI could offer contextual functions such as summarise source, suggest codes or ask questions about the current source.**
+120. **Inside Themes, AI could help compare codes/themes or identify patterns.**
+121. **Inside Write, AI could help organise evidence, draft structures or generate evidence tables.**
+122. **AI must not dominate the qualitative-analysis workflow.** The researcher's evidence and decisions should remain visually central.
+123. **Each major Trace mode needs a purposeful default screen instead of reusing a generic empty workspace.**
+124. **Data should default to project/data organisation when nothing is selected.**
+125. **Code should default to the code system or coding overview when there is no open document.**
+126. **Themes should default to theme organisation rather than an empty document shell.**
+127. **Analyse should default to analysis/query choices and saved results.**
+128. **Write should default to writing documents, findings sections or create-document actions.**
+129. **Trace should make the research journey legible throughout the product.**
+130. **The conceptual sequence should be something like `Bring data in → Organise → Code evidence → Develop themes → Analyse patterns → Write findings`.**
+131. **That research journey should act as the invisible backbone of the information architecture rather than merely appearing as five buttons.**
+132. **Introduce subtle transition guidance.** After first coding activity, Trace can gently indicate what was accomplished and what may logically come next.
+133. **Do not turn progression into gamification.** The purpose is orientation, not badges and confetti.
+134. **Add a global command palette.** `Ctrl+K` or `Ctrl+Shift+P` could expose frequently used actions without filling toolbars with buttons.
+135. **Useful command-palette actions could include Import source, Create code, Search project, New memo, Open recent project, Export and Jump to participant.**
+136. **Keyboard interaction should become a serious part of Trace UX.**
+137. **Common repetitive research actions should have sensible shortcuts.**
+138. **Examples include Create code, Apply code, Add memo, Search, Undo, Next source, Previous source and Open command palette.**
+139. **Menus and tooltips should expose those shortcuts so users can learn them naturally.**
+140. **Search should be contextual.** Project-wide search, source search and code search are different activities and should be clearly distinguished.
+141. **The transcript search field should not masquerade as a useful control before a transcript exists.**
+142. **Processing states need stronger feedback.** Importing documents, extracting PDFs, transcribing media, running analysis and exporting reports should never feel silent or frozen.
+143. **Progress messages should say what Trace is actually doing rather than use generic loading indicators.**
+144. **Errors need to be human and actionable.** The installer already demonstrated how damaging raw framework errors can be.
+145. **Do not expose Rust, Tauri, database or plugin terminology as the primary error message.**
+146. **Provide useful plain-language recovery instructions first.**
+147. **Technical information can live behind a `Technical details` disclosure for troubleshooting.**
+148. **Retry should only be shown when retrying can realistically fix the problem.**
+149. **Destructive actions need strong UX protection.**
+150. **Deleting a coded source must explain what happens to attached coding, notes, memos and participant relationships.**
+151. **Retranscribing already coded or annotated material should explicitly warn about the consequences.**
+152. **Merging or deleting codes/themes should preview how relationships and coded segments will change.**
+153. **The existing internal data-protection logic should be surfaced clearly in the interface.**
+154. **Undo/redo should be reliable enough that users trust experimentation.**
+155. **Crash recovery should have a friendly recovery screen rather than simply reopening into an uncertain state.**
+156. **Accessibility needs to become part of the UX foundation.**
+157. **Ensure proper keyboard focus states, tab navigation, contrast and screen-reader-compatible labels.**
+158. **Do not rely solely on colour to indicate active state or status.**
+159. **Resizable panes should have accessible keyboard alternatives where practical.**
+160. **Trace should work sensibly on common laptop resolutions without horizontal interface breakage.**
+161. **Test the real application at multiple window sizes, not only maximised on a large CI desktop.**
+162. **The right-panel horizontal scrollbar already proves responsive testing is currently insufficient.**
+163. **The UI should gracefully adapt rather than simply shrink fonts when space becomes constrained.**
+164. **Large projects need to influence the architecture now rather than later.**
+165. **Design Sources for hundreds of interviews/documents, not just four demo files.**
+166. **Design Codes for hundreds or thousands of codes with hierarchy, filtering and search.**
+167. **Design Participants for real attributes, cases and group comparisons.**
+168. **Collections/Sets need a place in the information architecture if Trace intends to support cross-case qualitative analysis.**
+169. **Long transcripts and large PDFs need performant scrolling and selection behaviour.**
+170. **The main workspace should not be obstructed by persistent floating controls.**
+171. **Context menus should be used where they reduce permanent clutter.**
+172. **Tooltips should explain unfamiliar icons rather than forcing users to guess.**
+173. **Icons should support labels rather than replacing language unnecessarily.**
+174. **Use consistent terminology throughout Trace.** For example, decide carefully when something is called Source, Document, Transcript, Participant, Case, Collection, Note or Memo.
+175. **Avoid internal/developer language in the researcher's interface.**
+176. **The application needs stronger source identity.** A researcher should always know exactly which document, participant and project they are working in.
+177. **When multiple sources are open, active-source state must be unmistakable.**
+178. **Notes, Memos and Codes should clearly distinguish source-level content from project-level content.**
+179. **The right inspector should follow selection context intelligently.** Selecting a passage, code, participant, theme or source should produce relevant details.
+180. **Do not make researchers manually navigate somewhere else merely to inspect the thing they just selected.**
+181. **Project Overview should communicate project health and progress without becoming a vanity analytics dashboard.**
+182. **Useful overview information might include sources, participants, codes, themes, last activity and backup status.**
+183. **Avoid displaying statistics just because numbers are available.** Every permanent UI element should help the researcher make a decision or take an action.
+184. **The interface should progressively reveal complexity.** Beginners should be able to import and code quickly while advanced functionality remains discoverable.
+185. **Do not expose every advanced feature simultaneously.** That creates cognitive overload.
+186. **Power-user functions can appear through contextual menus, panels, command palette and keyboard shortcuts.**
+187. **Trace should feel calm.** Qualitative analysis is cognitively demanding enough without the software demanding attention from every corner.
+188. **Reduce decorative visual competition so evidence, annotations, coding and themes remain the focus.**
+189. **Use colour deliberately.** Colour should indicate meaning, active state, coding or status rather than decorate structural lines and controls.
+190. **Develop a formal Trace design system.** Define typography, spacing, radii, shadows, surface hierarchy, border use, icon sizing, interaction states and responsive rules.
+191. **Build reusable UI primitives rather than fixing individual pages independently.** Buttons, tabs, inspectors, context panes, empty states, dialogs and menus should all derive from common components.
+192. **Create standard empty-state components with title, explanation, primary action and optional secondary action.**
+193. **Create standard error-state components with plain-language explanation and optional technical details.**
+194. **Create standard loading/progress components for imports, transcription, extraction and analysis.**
+195. **Create a proper desktop modal/dialog standard.** Dialogs should have consistent sizing, action placement and keyboard behaviour.
+196. **Create a consistent context-menu standard.**
+197. **Create a consistent table/list standard for sources, participants, codes and analyses.**
+198. **Create a consistent pane-resizing and pane-collapsing behaviour.**
+199. **Remember pane widths where appropriate between sessions.**
+200. **Remember reasonable workspace state without blindly restoring confusing transient selections.**
+201. **Differentiate `remember my layout` from `resume exactly where I was`.** Those are separate preferences.
+202. **The application should gracefully handle a deleted/missing previous project instead of opening into broken placeholders.**
+203. **Recent-project entries should detect unavailable project locations and offer Locate, Remove from list or Restore.**
+204. **Opening a project should include clear loading/recovery feedback if the project requires migration or repair.**
+205. **Version migrations should never happen invisibly if there is meaningful risk.**
+206. **Project data should remain separate from application/demo/build files.** Installer updates must not contaminate user research data.
+207. **Automated UI tests need to cover first launch, not just successful installation.**
+208. **The release pipeline should verify what a real user sees after launching a newly installed copy.**
+209. **Add a Windows first-launch smoke test.** It should verify that production builds do not expose demo/test projects or phantom participants.
+210. **Add UI-state tests for zero-source projects.** They should prove that source-specific and participant-specific controls remain hidden.
+211. **Add tests for real imported projects.** Confirm the correct source title, participant and inspector state appear.
+212. **Add responsive screenshot or layout checks at realistic window sizes.**
+213. **Specifically test the inspector tab area so horizontal-scroll regressions cannot silently return.**
+214. **Specifically test typography at standard Windows scaling.**
+215. **Test with 100%, 125% and 150% Windows scaling where practical.**
+216. **Test maximised and non-maximised windows.**
+217. **Test common laptop resolutions as well as large workstation screens.**
+218. **Visual regression testing should complement functional tests.** An application can technically work while looking obviously broken, which this screenshot demonstrates perfectly.
+219. **Release gates should capture at least Home, empty project, populated transcript, Codes, Themes, Analyse and Write screens.**
+220. **The application's release definition therefore needs to expand beyond “installer works and functionality exists.”** It should include truthful first-launch state, usable visual hierarchy, readable typography and responsive core screens.
+221. **Do not prioritise OCR, sophisticated network visualisations or other headline v0.12 features before this UX foundation is repaired.**
+222. **The next development phase should be treated as `Trace UX Foundation` or equivalent.**
+223. **That phase should preserve the working research engine underneath while rebuilding the application shell around it.**
+224. **Phase one should address production-state hygiene, Home and first launch.**
+225. **Phase two should establish navigation architecture and the context-pane/workspace/inspector shell.**
+226. **Phase three should establish typography, spacing, component design and responsive behaviour.**
+227. **Phase four should redesign Data/import/source/participant workflows.**
+228. **Phase five should redesign Code, Themes, Analyse and Write within the shared shell.**
+229. **Phase six should integrate Trace AI contextually rather than as an isolated visual attraction.**
+230. **Phase seven should add keyboard productivity, command palette, accessibility and advanced interaction polish.**
+231. **Phase eight should introduce visual and first-launch regression gates into the Windows release pipeline.**
+232. **Do not consider the UX overhaul complete merely because screenshots look attractive.** Real workflows must be exercised with actual imported transcripts, PDFs, spreadsheets and media.
+233. **Test the entire researcher journey:** create project -> import data -> organise participants -> code passages -> create notes/memos -> build themes -> analyse -> write/export -> close -> reopen -> recover/backup.
+234. **Use realistic project sizes during testing rather than only empty/demo projects.**
+235. **The central design rule should be: show only what is meaningful in the current state.**
+236. **The central product rule should be: the research material is more important than Trace's interface.**
+237. **The central navigation rule should be: the researcher should always know where they are, what they are working on and what they can do next.**
+238. **The central trust rule should be: Trace should never visually contradict its own data state.**
+239. **The central desktop rule should be: Trace should feel like serious Windows research software, not a web dashboard placed inside a native window.**
+240. **The central first-launch rule should be: a researcher opening Trace for the first time should understand the product within seconds without already knowing how Trace works.**
 
 ---
 
-## 4. Non-negotiable product principles
+# Required implementation sequence
 
-Every agent must preserve the following.
+Use the phase order defined by items 224–231 unless a blocking dependency requires otherwise.
 
-### 4.1 Research data is more important than application files
+## Phase 1: Production-state hygiene, Home and first launch
 
-Never delete or overwrite research projects merely because the app is updated, repaired, or uninstalled.
+Focus on items 1–30, 181–183, 200–209 and related state-truth requirements.
 
-Protect:
+Acceptance must prove a genuinely fresh installed copy opens to a clean Trace Home with no demo project, phantom participant, leaked fixture state, or unexplained workspace selection.
 
-- Trace project databases
-- imported project copies
-- participant records
-- codes
-- coding references
-- coder assignments
-- themes
-- notes
-- memos
-- analysis state where persisted
-- verified backups
-- local project metadata
-- user-created outputs
+## Phase 2: Navigation architecture and desktop shell
 
-Application binaries may be replaced. Research data must survive maintenance unless the user explicitly asks to delete it.
+Focus on items 31–91 and related source-identity/context rules.
 
-### 4.2 Local-first behavior must remain true
+The target shell is:
 
-Trace is a local-first research workspace. Do not silently introduce network dependency into core research workflows.
+`Navigation rail | Context pane | Main workspace | Inspector`
 
-### 4.3 Existing v0.12 research capabilities must not regress
+The major modes remain Data, Code, Themes, Analyse and Write, but the giant floating bottom dock must be replaced by the slim permanent left navigation rail required above.
 
-Preserve and retest:
+## Phase 3: Design system, typography and responsive behaviour
+
+Focus on items 92–113, 156–163 and 187–199.
+
+Create shared tokens and reusable primitives rather than page-specific cosmetic patches.
+
+## Phase 4: Data, import, source and participant workflows
+
+Focus on items 46–65, 140–153, 164–180 and the large-project requirements.
+
+## Phase 5: Code, Themes, Analyse and Write
+
+Rebuild these modes within the shared shell while preserving the verified research engine and existing analytical mathematics.
+
+## Phase 6: Contextual Trace AI
+
+Focus on items 114–122. AI must support the current research task and must never visually dominate the evidence or researcher decisions.
+
+## Phase 7: Productivity, accessibility and interaction polish
+
+Focus on items 134–180 and the relevant design-system requirements, including command palette, keyboard shortcuts, contextual search, accessible resizing, human errors and destructive-action safeguards.
+
+## Phase 8: Visual, first-launch and end-to-end release gates
+
+Focus on items 207–240.
+
+The Windows release pipeline must verify not only that Trace installs and launches, but also that first launch is truthful and understandable and that the core researcher journey remains usable at realistic resolutions and scaling levels.
+
+---
+
+# Non-regression rules
+
+The UX Foundation may rebuild the application shell, but it must not remove or weaken the proven research engine.
+
+Preserve and retest at minimum:
 
 - Office and survey imports
+- DOCX, CSV, XLSX, PDF, image, audio and video workflows
 - coding and annotations
 - undo and redo
-- offline transcription
+- offline/local transcription
 - PDF text analysis
 - named coders
 - participant x code matrix
@@ -129,1277 +338,75 @@ Preserve and retest:
 - raw agreement
 - Cohen's kappa
 - analysis CSV export
-- recovery and project preservation behavior
-
-### 4.4 Readability beats artificial density
-
-Trace is used for long periods. Researchers may read transcripts and code material for hours.
-
-Do not use tiny text simply to fit more controls on screen.
-
-### 4.5 Progressive disclosure beats feature dumping
-
-Advanced capabilities should remain accessible without competing with the user's immediate task.
-
-For a new project, the first job is usually to bring in research material, not to think about QDC, QDPX, backup verification, group matrices, and every advanced export format simultaneously.
-
-### 4.6 The installed app is the deliverable
-
-Source inspection is not completion.
-
-A release is complete only when the real Windows installer has built, installed, launched, updated or repaired where required, uninstalled, and passed data-preservation verification.
-
----
-
-## 5. Definition of done for v0.12.1
-
-Do not mark v0.12.1 complete until all of these are true.
-
-### Installer and maintenance
-
-- [ ] Fresh installation succeeds through the exact branded `TraceSetup.exe`.
-- [ ] An existing previous Trace installation can be updated in place.
-- [ ] Repair over the same version works or is intentionally and clearly defined.
-- [ ] Update while Trace is running is handled safely and clearly.
-- [ ] Custom install paths are handled.
-- [ ] Normal `%LOCALAPPDATA%\Trace` installations are handled.
-- [ ] A failed update leaves the prior usable installation intact or rolls back safely.
-- [ ] Research projects survive update, repair, and uninstall.
-- [ ] The installer shows the correct version everywhere.
-- [ ] Installer errors are actionable and expose technical details without exposing research content.
-- [ ] The installed executable matches the native payload expected by CI.
-- [ ] The installed copy launches successfully.
-
-### UX and visual robustness
-
-- [ ] Global typography has been raised to a readable scale.
-- [ ] No important application text is rendered at an unnecessarily tiny size.
-- [ ] Bottom navigation never covers content.
-- [ ] No stray blue or green lines escape their component boundaries.
-- [ ] Inspector tabs fit without horizontal scrolling.
-- [ ] No primary tab label is clipped.
-- [ ] Empty states tell the user what to do next.
-- [ ] Missing participant metadata is hidden rather than represented by meaningless punctuation.
-- [ ] Data onboarding is quieter and clearer.
-- [ ] The app remains usable at all required resolutions and scaling factors.
-- [ ] The UI has no unexplained horizontal page scrollbars.
-- [ ] Keyboard focus and interaction states remain visible.
-
-### Regression and release
-
-- [ ] Existing v0.12 research contracts remain green.
-- [ ] New v0.12.1 UX and installer tests are green.
-- [ ] Upgrade CI is green.
-- [ ] Manual QA on a real Windows machine is complete.
-- [ ] Final Windows release workflow is green.
-- [ ] Release artifact contains installer, hashes, and verification record.
-
----
-
-## 6. Priority system
-
-Agents should work in this order unless a blocking dependency requires otherwise.
-
-### P0: Release blockers
-
-1. Real update or repair failure at 9 percent.
-2. Incorrect visible installer version.
-3. Data-preservation risk during update.
-4. Lack of rollback or safe abort behavior.
-5. Layout overlap that hides controls or content.
-6. Stray graphical lines that visibly corrupt the interface.
-7. Clipped inspector navigation.
-
-### P1: Core usability
-
-1. Global typography scale.
-2. Data-page onboarding simplification.
-3. Code-workspace empty state.
-4. Side panel sizing and resizing.
-5. Recovered-session notification placement.
-6. Common-resolution and DPI robustness.
-7. Accessibility and keyboard interaction.
-
-### P2: Fit and finish
-
-1. Menu sizing.
-2. Tooltip consistency.
-3. minor spacing refinements.
-4. optional collapsible navigation behavior.
-5. additional polish once P0 and P1 are verified.
-
-Do not spend significant time on P2 while a P0 issue remains open.
-
----
-
-# PART I: INSTALLER AND UPDATE HARDENING
-
-## 7. Phase 0: Re-establish the proven source before editing
-
-The repository has historically reconstructed exact working source through bootstrap overlays and CI-produced source artifacts. Do not assume an arbitrary local or partial directory is canonical.
-
-Before implementation:
-
-1. Inspect the current `trace-v012` branch.
-2. Inspect `.github/workflows/v012-analysis-check.yml`.
-3. Inspect `.github/workflows/windows-v012-final.yml`.
-4. Inspect `build-status/windows-v012-exact-final.txt`.
-5. Reconstruct or obtain the same complete v0.12 source checkpoint used by the successful final release.
-6. Verify version `0.12.0` and all required source files before changing anything.
-7. Preserve the verified v0.12 checkpoint so a regression comparison remains available.
-
-Required baseline checks should include the existing tests carried by v0.12, such as:
-
-- `tests/schema_contract.py`
-- `tests/v11_imports_display.py`
-- `tests/v11_usability.py`
-- `tests/v11_transcription.py`
-- `tests/v11_pdf_text.py`
-- `tests/v12_analysis.py`
-- `tests/v12_analysis_math.mjs`
-- Rust unit tests
-
-If source reconstruction changes, update this guide and CI so the next agent does not have to rediscover the process.
-
----
-
-## 8. Phase 1: Diagnose the 9 percent maintenance failure
-
-Do not patch around the failure blindly.
-
-Instrument the installer so **Checking this PC** produces a precise result.
-
-Check at minimum:
-
-- detected install path
-- detected installed version
-- whether `Trace.exe` exists
-- whether `Trace.exe` is running
-- whether application files are locked
-- whether the install directory is writable
-- whether previous uninstall metadata exists
-- whether the embedded payload can be extracted and verified
-- whether the old installation is complete or partial
-- whether the requested path is supported
-- available disk space
-- relevant process exit codes
-- installer or NSIS return codes
-
-Diagnostic requirements:
-
-- errors must be structured internally
-- the user-facing message must be short and actionable
-- technical details must be available separately
-- logs must not contain transcript text, code contents, notes, memos, participant data, or other research content
-
-Examples of acceptable user-facing errors:
-
-- `Trace is still running. Close Trace and try the update again.`
-- `Windows could not write to the existing Trace installation.`
-- `The existing installation is incomplete. Repair can restore the missing application files.`
-- `The installer payload could not be verified.`
-- `There is not enough free space to complete the update.`
-
-The generic message `Setup stopped safely` is not enough on its own.
-
-Acceptance gate:
-
-- [ ] The original 9 percent failure can be reproduced or its exact cause can be demonstrated.
-- [ ] The installer reports the underlying cause accurately.
-- [ ] Retry is offered only when retrying can plausibly succeed.
-
----
-
-## 9. Phase 2: Make maintenance mode reliable
-
-Support these scenarios explicitly.
-
-### 9.1 Fresh install
-
-- no previous Trace installation
-- default per-user directory
-- custom supported directory
-- shortcuts on or off
-- launch after setup on or off
-
-### 9.2 Update previous version
-
-- previous version installed in normal `%LOCALAPPDATA%\Trace`
-- previous version installed in a custom directory
-- previous version closed normally
-- previous version was previously launched and has project data
-- previous version has shortcuts
-- previous version has backups
-
-### 9.3 Trace is running
-
-Preferred behavior:
-
-1. Detect the running process.
-2. Explain that the app must close before binaries are replaced.
-3. Offer a safe `Close Trace and continue` action where practical.
-4. If automatic closure is not appropriate, tell the user exactly what to do.
-5. Never silently kill a process while research data may still be saving.
-
-### 9.4 Repair same version
-
-Repair must restore missing or damaged application files without touching research projects.
-
-### 9.5 Partial or malformed previous installation
-
-Handle missing executable, missing uninstaller, or stale installation metadata without blindly deleting unknown directories.
-
-### 9.6 Safe abort and rollback
-
-Before modifying the installed application, know how to recover.
-
-At minimum:
-
-- do not destroy the previous installation before the new payload is validated
-- stage replacement files before committing destructive changes where practical
-- if replacement fails, restore the previous application state or leave the old installation usable
-- remove temporary payloads after success or failure
-- never roll research data backward as part of application rollback
-
-Acceptance gate:
-
-- [ ] Previous version -> v0.12.1 succeeds.
-- [ ] Same-version repair succeeds or is intentionally unsupported with a clear explanation.
-- [ ] Running-process scenario is handled safely.
-- [ ] Failed update does not strand the user without a usable installation.
-- [ ] Projects survive every path.
-
----
-
-## 10. Phase 3: Create a single version authority
-
-Current visible `0.9.0` text proves version information has drifted.
-
-Create one authoritative release version mechanism and derive all shipped version strings from it.
-
-Synchronize:
-
-- root package version
-- setup-shell package version
-- main Rust package version
-- setup-shell Rust package version
-- Tauri config version
-- setup-shell Tauri config version
-- installer UI
-- top-right setup version
-- review page version
-- Windows file metadata where applicable
-- NSIS metadata
-- MSI metadata if MSI remains part of release
-- Add/Remove Programs entry
-- verification output
-
-For the hardening release, the intended version is `0.12.1`.
-
-Add CI that fails if:
-
-- a shipped UI still contains `0.9.0`
-- application and installer versions differ
-- package/Tauri/Rust release versions disagree
-
-Acceptance gate:
-
-- [ ] One change updates all shipped version surfaces.
-- [ ] No stale `0.9.0` remains in production UI or metadata.
-
----
-
-## 11. Phase 4: Installer UX hardening
-
-### Typography
-
-Raise installer typography globally.
-
-Recommended working targets:
-
-- normal body text: 14 to 16 px
-- control text: 14 to 15 px
-- secondary metadata: 12.5 to 13.5 px
-- page headings: large enough for hierarchy but not at the expense of microscopic supporting text
-
-Do not place important information below 12 px.
-
-### Bottom setup controls
-
-The floating bottom control capsule must never cover setting cards, error content, or progress content.
-
-Preferred implementation:
-
-- visually floating if desired
-- structurally accounted for by layout
-- permanent reserved bottom space or a true docked layout region
-
-### Scroll behavior
-
-- avoid full-page scrolling on standard installer screens where practical
-- keep scrollbars visually consistent with Trace
-- never let a scrollbar overlap content
-- ensure the Options page fits comfortably at 1366 x 768 at 100 percent scaling if possible
-
-### Maintenance terminology
-
-Fresh install may use:
-
-`Welcome -> Options -> Ready -> Install`
-
-Maintenance mode should adapt, for example:
-
-`Welcome -> Options -> Review -> Update`
-
-Uninstall mode should end in `Remove` or `Uninstall`, not `Install`.
-
-Use consistent wording for `Update / repair Trace`.
-
-### Maintenance summary
-
-Where useful, show:
-
-- installed version
-- new version
-- installation location
-- whether projects are protected
-- shortcut behavior
-- post-setup behavior
-
-Acceptance gate:
-
-- [ ] No installer content is hidden behind the bottom controls.
-- [ ] Important text is readable at common Windows scaling levels.
-- [ ] Maintenance wording matches the selected action.
-
----
-
-# PART II: APPLICATION UX HARDENING
-
-## 12. Phase 5: Introduce a global typography system
-
-This is a cross-application task, not a one-screen patch.
-
-Audit every CSS `font-size` and remove arbitrary tiny values where they are used for meaningful content.
-
-Create reusable design tokens. Exact names may vary, but the system should represent at least:
-
-- page title
-- section title
-- body
-- UI/control text
-- secondary metadata
-- caption or microcopy
-
-Recommended targets:
-
-| Role | Target |
-| --- | --- |
-| Page heading | 26 to 34 px |
-| Section heading | 18 to 22 px |
-| Body / reading text | 15 to 16 px |
-| Controls / tabs / buttons | 14 to 15 px |
-| Secondary metadata | 12.5 to 13.5 px |
-
-Important rules:
-
-- meaningful text should normally not be below 12 px
-- transcript reading text should favor comfort over density
-- larger fonts require appropriate line height and component height
-- do not shrink text just to avoid fixing layout
-
-Audit at minimum:
-
-- project title and subtitle
-- breadcrumbs
-- save status
-- sidebar labels
-- sidebar counts
-- search fields
-- participant metadata
-- transcript text
-- code labels
+- notes and memos
 - themes
-- inspector tabs
-- notes
-- memos
-- tables
-- matrices
-- chart labels
-- dropdowns
-- context menus
-- buttons
-- form labels
-- empty states
-- toasts
-- interoperability copy
-- backup copy
-- installer copy
+- project recovery
+- verified backups
+- research-data preservation through install, update, repair, rollback and uninstall
 
-Acceptance gate:
+Never weaken an existing research or data-preservation test merely to make a UX build pass.
 
-- [ ] Typography is tokenized.
-- [ ] No page relies on clusters of tiny text.
-- [ ] Long reading sessions are comfortable at 1600 x 900 and 1920 x 1080.
+Research data is more important than application files.
+
+Core research workflows remain local-first unless the user explicitly chooses a network feature.
+
+Do not expose transcript text, participant data, codes, notes, memos or other research content in diagnostic logs.
 
 ---
 
-## 13. Phase 6: Fix global layout robustness
+# Definition of UX Foundation done
 
-### 13.1 Bottom workspace navigation
+Do not mark the Trace UX Foundation complete until all of these are true:
 
-The current Data/Code/Themes/Analyse/Write dock visibly overlaps page content.
+- all 240 master-contract items have been implemented, explicitly resolved, or documented as intentionally not applicable with a defensible product reason
+- the new shell and navigation architecture are present in the installed Windows app
+- a genuinely fresh installed copy opens to Trace Home and contains no fixture/demo leakage
+- zero-state, populated-state and contradictory-state tests are green
+- realistic imports and research workflows work end to end
+- the full researcher journey in item 233 has been exercised
+- responsive and DPI checks cover common laptop and workstation sizes
+- visual regression gates cover Home, empty project, populated source, Code, Themes, Analyse and Write
+- research-feature regression contracts remain green
+- installer/update/repair/rollback/data-preservation gates remain green
+- real-machine physical UAT is complete
+- any defects found during physical UAT are fixed and the relevant gates rerun
 
-Requirements:
-
-- content must never flow underneath it
-- reserve its full height in layout
-- no buttons, cards, table rows, editors, or messages may be hidden behind it
-- selected workspace must remain obvious
-- keyboard focus must be visible
-- the Assistant/sparkle action must have a text label or an unambiguous accessible label
-
-Preferred approach: keep the current visual character but make it structurally docked.
-
-### 13.2 Stray blue and green lines
-
-Find the source of the lines crossing the lower interface.
-
-Investigate:
-
-- SVG overflow
-- canvas or path animation
-- decorative component overflow
-- Assistant button decoration
-- transform or clipping bugs
-
-Fix the root cause. Do not merely cover the lines with another layer.
-
-### 13.3 Header
-
-Increase legibility of:
-
-- project name
-- project type
-- breadcrumbs
-- save status
-
-Handle:
-
-- long project names
-- narrow windows
-- deep breadcrumbs
-- truncation with tooltip where useful
-
-### 13.4 Recovered-session notice
-
-The recovery message must not float awkwardly over workspace content.
-
-Use either:
-
-- a proper reserved notification strip below the header, or
-- a normal toast that does not cover task controls
-
-Acceptance gate:
-
-- [ ] No overlap at supported sizes.
-- [ ] No escaped graphical artifacts.
-- [ ] Header remains readable under long-title and scaling tests.
+Passing the older v0.12.1 hardening checklist alone is not sufficient to declare this master UX contract complete.
 
 ---
 
-## 14. Phase 7: Harden the Code workspace
+# Historical v0.12.1 engineering baseline
 
-### Left data sidebar
+The v0.12.1 hardening work remains valuable evidence and must not be discarded. It established a proven Windows engineering baseline including installer diagnostics, safe update/repair behaviour, rollback, version consistency, typography improvements, inspector hardening, import improvements, search behaviour, accessibility foundations, responsive/DPI contracts, research regression tests and exact Windows release verification.
 
-- make the sidebar resizable
-- define sensible minimum and maximum widths
-- persist width where practical
-- increase source and search text
-- distinguish `no sources exist` from `no sources match search`
+Read these files for that history and exact run/artifact evidence:
 
-For zero sources use guidance such as:
+- `PROGRESS.md`
+- `docs/v0121-checklist-status.md`
+- `docs/visuals/README.md`
+- `build-status/windows-v0121-exact-final-v2.txt`
 
-`No sources yet. Import your first source.`
-
-For a failed search use guidance such as:
-
-`No sources match "...".`
-
-### Main coding canvas empty state
-
-Do not leave a researcher with only:
-
-`No text source is open.`
-
-Provide a useful next action:
-
-- `Import source`
-- `Go to Data`
-- if sources already exist, show available or recent sources
-
-If exactly one source exists, consider opening it automatically if doing so is predictable and safe.
-
-Disable or hide transcript-only controls when no transcript exists.
-
-### Transcript reading experience
-
-- comfortable font size
-- comfortable line height
-- stable selection behavior
-- clear coding highlights
-- overlapping code highlights remain interpretable
-- preserve scroll position
-- preserve selected source across workspace switches
-- support keyboard-oriented coding where practical
-
-### Participant header
-
-Do not render empty metadata as:
-
-`Participant • — years exp. • —`
-
-Hide absent values entirely. Reveal metadata only when present.
-
-### Right inspector
-
-The current inspector has clipped tabs and a horizontal scrollbar.
-
-Requirements:
-
-- `Info | Codes | Notes | Memos` must fit at normal width
-- no horizontal scrollbar for primary inspector navigation
-- make inspector resizable
-- define min and max widths
-- persist width where practical
-- vertical scrolling is allowed for content
-- active tab and counters remain readable
-- long code names wrap or truncate intentionally
-- consider collapse/show controls for focused reading
-
-Acceptance gate:
-
-- [ ] Code workspace has no dead-end empty state.
-- [ ] Inspector primary tabs are fully visible.
-- [ ] Side panels are robust at supported resolutions.
+Where those historical documents conflict with this master UX contract on product direction, **this file wins**.
 
 ---
 
-## 15. Phase 8: Simplify the Data workspace
-
-The Data page should guide a new project toward one obvious first action.
-
-Primary onboarding goal:
-
-`Bring in your research material`
-
-Primary CTA:
-
-`Import sources`
-
-Current actions such as New project, Open `.trace` project, Collections, QDC, QDPX, and backup tools should remain available but must not all compete at equal visual weight.
-
-### Recommended hierarchy
-
-Primary:
-
-- Import sources
-
-Secondary:
-
-- Open existing Trace project
-
-Application-level or menu-level:
-
-- New project
-
-Advanced or progressively disclosed:
-
-- QDC import/export
-- QDPX import/export
-- detailed backup controls
-
-### Active / Starred / Archived
-
-If all counts are zero, these controls can be visually quiet. Consider hiding advanced filtering until it becomes relevant, but do not make existing functionality unreachable.
-
-### Search and Collections
-
-- ensure search placeholder is not clipped
-- keep source search visually associated with source listing
-- keep Collections secondary during zero-source onboarding
-
-### Source cards
-
-Once populated, source cards should be scannable and show useful metadata without becoming dense.
-
-Possible metadata:
-
-- source name
-- source type
-- participant or case where linked
-- coding count
-- modified or imported status where useful
-
-Acceptance gate:
-
-- [ ] A first-time user can identify the first action within a few seconds.
-- [ ] Advanced interoperability no longer dominates zero-source onboarding.
-
----
-
-## 16. Phase 9: Harden Themes, Analyse, and Write
-
-These workspaces may not show every defect visible in the current screenshots, but the same global hardening rules apply.
-
-### Themes
-
-- increase typography
-- make relationship between codes and themes understandable
-- provide a meaningful empty state
-- make theme creation obvious after codes exist
-- allow evidence contributing to themes to be inspected easily
-- preserve context when moving between Code and Themes
-
-### Analyse
-
-Preserve all v0.12 analysis features.
-
-Harden:
-
-- Matrix
-- Co-occurrence
-- Negative cases
-- Groups
-- Intercoder
-
-Requirements:
-
-- readable tabs
-- readable filters
-- readable evidence text
-- no accidental tab overflow
-- horizontal scrolling only where genuinely required by a large matrix
-- freeze matrix headers where useful
-- clear coder A / coder B selection
-- clear plain-language explanation of raw agreement and Cohen's kappa
-- do not present kappa as an absolute quality score
-- loading or progress feedback for large calculations
-- easy evidence drill-down
-
-### Write
-
-- comfortable editor font and line height
-- readable toolbar
-- no bottom-dock overlap
-- reliable autosave
-- visible save failure state
-- recovery after abnormal closure
-- evidence/code/theme insertion remains understandable
-
-Acceptance gate:
-
-- [ ] Each workspace has a clear zero-content state.
-- [ ] Global typography and overlap fixes apply consistently.
-- [ ] Existing v0.12 analysis math remains unchanged unless a tested bug is found.
-
----
-
-# PART III: CROSS-CUTTING UX QUALITY
-
-## 17. Empty-state system
-
-Audit every empty, filtered, loading, and error state.
-
-Do not use one generic empty message for different conditions.
-
-Every empty state should answer:
-
-1. What is empty?
-2. Why does that matter?
-3. What should the user do next?
-
-Distinguish:
-
-- zero content
-- zero search results
-- content hidden by filters
-- loading
-- failure
-
-Avoid meaningless placeholders and dangling punctuation.
-
----
-
-## 18. Search behavior
-
-Standardize search across Data, Code, Themes, and Analyse.
-
-Requirements:
-
-- readable input text
-- readable result text
-- clear match highlighting where appropriate
-- visible active filters
-- clear distinction between no data and no matches
-- predictable clear action
-- sensible keyboard shortcuts such as Ctrl+F where contextually appropriate
-- transcript search must not be confused with app-wide or source-list search
-
----
-
-## 19. Forms, menus, dialogs, and dropdowns
-
-Audit all of them for:
-
-- typography
-- control height
-- focus state
-- z-index
-- keyboard navigation
-- viewport edge handling
-- modal fit at 1366 x 768
-- consistent primary/secondary/destructive ordering
-- accessible labels
-- safe Escape behavior
-
-No dropdown should appear beneath the bottom dock or sidebars.
-
-No modal should require hidden nested scrolling unless genuinely necessary.
-
----
-
-## 20. Accessibility
-
-At minimum:
-
-- logical keyboard tab order
-- visible focus rings
-- no color-only status communication
-- sensible text/background contrast
-- readable disabled states
-- accessible names for icon-only controls
-- tooltips for unfamiliar icons
-- reasonable pointer targets
-- support Windows text scaling without breaking layout
-- respect reduced-motion preferences where animation exists
-- do not remove focus outlines without replacing them with a clear equivalent
-
-The Assistant/sparkle control must not rely solely on an unexplained symbol.
-
----
-
-## 21. Responsive desktop and DPI matrix
-
-Test at minimum:
-
-### Viewport sizes
-
-- 1280 x 720
-- 1366 x 768
-- 1440 x 900
-- 1600 x 900
-- 1920 x 1080
-- 2560 x 1440
-
-### Windows scaling
-
-- 100 percent
-- 125 percent
-- 150 percent
-- 175 percent where practical
-
-### States
-
-- maximized
-- normal window
-- narrow resized window
-- long project title
-- long source title
-- long code name
-- long memo title
-- deep breadcrumbs
-
-At every supported combination verify:
-
-- no clipped primary labels
-- no unexplained horizontal page scrollbar
-- no hidden buttons
-- no content beneath fixed navigation
-- no unreadably tiny text
-- no collapsed inspector tabs
-
----
-
-## 22. Loading, performance, and responsiveness
-
-Test real research-sized workloads.
-
-Include:
-
-- hundreds of sources
-- long transcripts
-- many participants
-- thousands of codes or coding references where feasible
-- large matrices
-- large search result sets
-
-Use list virtualization where needed.
-
-Debounce expensive search operations.
-
-Do not freeze the whole UI during long analysis or import operations.
-
-Show progress for operations that are genuinely long:
-
-- import
-- transcription
-- backup
-- export
-- large analyses
-
-Allow cancellation where it can be made safe.
-
----
-
-## 23. Import UX
-
-Verify and improve:
-
-- multi-file import
-- supported-format explanation
-- drag and drop if present
-- import queue
-- per-file result
-- duplicate handling
-- Unicode filenames
-- long paths
-- external-drive sources
-- network paths where supported
-- large files
-
-Regression formats include at least:
-
-- TXT or text transcript
-- DOCX
-- CSV
-- XLSX survey
-- PDF
-- image
-- audio
-- video
-
-One failed file should not unnecessarily invalidate unrelated valid files.
-
-Original source files must remain untouched when Trace copies material into a local project.
-
----
-
-## 24. Saving, recovery, and diagnostics
-
-Autosave status must be truthful.
-
-Test:
-
-- successful save
-- failed save
-- forced process termination
-- unclean close
-- reopen and recovery
-- no duplicate records after recovery
-
-Application logs must be useful for diagnostics without leaking research content.
-
-Where appropriate provide a way to export diagnostic logs.
-
----
-
-# PART IV: AUTOMATED TESTING AND CI
-
-## 25. Add visual regression and layout contracts
-
-Automated tests should catch the classes of defects currently visible.
-
-Add screenshot or DOM/layout tests for at least:
-
-- Data empty state
-- Data populated state
-- Code empty state
-- Code populated state
-- Themes
-- Analyse
-- Write
-- installer fresh-install mode
-- installer maintenance mode
-- installer error state
-
-Add assertions for:
-
-- no root horizontal overflow at supported viewport widths
-- content bottom padding is at least sufficient for the workspace dock
-- inspector tabs fit without horizontal scroll
-- minimum typography tokens are respected
-- known stale version strings are absent
-- decorative elements are clipped to their intended component
-
-A visual test is useful only if it detects a real regression. Avoid brittle pixel-perfect tests for harmless anti-aliasing differences.
-
----
-
-## 26. Expand Windows installer CI with an upgrade matrix
-
-The current final pipeline proves a clean install. v0.12.1 must prove maintenance too.
-
-Required upgrade test flow:
-
-1. Build or retrieve the previous verified Trace installer.
-2. Install the previous version on a Windows GitHub Actions runner.
-3. Launch the installed previous copy.
-4. Create or stage representative research data.
-5. Close the previous app cleanly.
-6. Run the new exact branded `TraceSetup.exe` in update mode.
-7. Verify update completes.
-8. Verify the installed version is v0.12.1.
-9. Verify installed `Trace.exe` hash matches the expected v0.12.1 native payload.
-10. Launch the updated installed copy.
-11. Verify representative research data remains.
-12. Verify coding references remain.
-13. Verify participants remain.
-14. Verify notes and memos remain.
-15. Verify themes remain.
-16. Verify backups remain.
-17. Uninstall through the new branded setup.
-18. Verify research data remains after uninstall.
-
-Also add focused scenarios where practical:
-
-- update while previous Trace is running
-- same-version repair
-- custom install directory
-- locked application file
-- missing application file
-- stale previous installer metadata
-
-A failure in upgrade CI must block release.
-
----
-
-## 27. Preserve the v0.12 regression suite
-
-The v0.12.1 pipeline must continue to run the existing research-feature tests.
-
-Do not replace comprehensive tests with only visual checks.
-
-Required categories:
-
-- JavaScript syntax
-- schema migration contract
-- Office/survey import regression
-- display/usability regression
-- transcription regression
-- PDF text regression
-- v0.12 analysis/intercoder contract
-- kappa math fixtures
-- Rust compile
-- Rust unit tests
-- native Windows build
-
----
-
-# PART V: MANUAL QA
-
-## 28. Real-machine QA checklist
-
-Before release, test the actual installer on a normal Windows machine, not only CI.
-
-At minimum:
-
-- [ ] Fresh install.
-- [ ] Upgrade from the previous real installed version.
-- [ ] Update while Trace is initially open.
-- [ ] Repair same version if supported.
-- [ ] Launch updated app.
-- [ ] Open an existing project.
-- [ ] Import DOCX.
-- [ ] Import PDF.
-- [ ] Import CSV/XLSX.
-- [ ] Import audio.
-- [ ] Import video.
-- [ ] Transcribe audio.
-- [ ] Create code.
-- [ ] Apply coding.
-- [ ] Undo and redo.
-- [ ] Create second coder.
-- [ ] Run intercoder comparison.
-- [ ] Create or edit themes.
-- [ ] Run participant x code matrix.
-- [ ] Run co-occurrence.
-- [ ] Run negative-case analysis.
-- [ ] Run group comparison.
-- [ ] Export analysis CSV.
-- [ ] Create note.
-- [ ] Create memo.
-- [ ] Backup project.
-- [ ] Force an abnormal close.
-- [ ] Reopen and verify recovery.
-- [ ] Uninstall.
-- [ ] Verify project files still exist.
-
-Also visually inspect Data, Code, Themes, Analyse, and Write at the supported DPI and resolution matrix.
-
----
-
-# PART VI: RELEASE PIPELINE
-
-## 29. v0.12.1 release workflow requirements
-
-The final release workflow must use an actual Windows runner and must verify the exact installer users receive.
-
-Required sequence:
-
-1. Start from a proven v0.12.1 source checkpoint.
-2. Run source and regression contracts.
-3. Compile native Windows Trace.
-4. Run Rust tests.
-5. Produce the native Tauri NSIS installer.
-6. Verify the native payload is a credible Windows executable.
-7. Embed that exact native installer payload in the branded setup shell.
-8. Build the branded `TraceSetup.exe`.
-9. Calculate installer SHA-256.
-10. Perform clean-install verification.
-11. Perform upgrade verification from a previous installed release.
-12. Hash the installed executable and compare it with the expected native payload.
-13. Launch the installed copy.
-14. Keep it alive long enough to detect immediate startup failure.
-15. Uninstall the exact branded installation.
-16. Verify research-data sentinels remain.
-17. Produce a human-readable final verification file.
-18. Upload release artifacts.
-
-Release artifact should include at least:
-
-- `TraceSetup.exe`
-- `SHA256.txt`
-- `FINAL-VERIFICATION.txt`
-- native `Trace.exe`
-- native installer artifacts useful for equivalence verification
-
-Do not call the release complete if any required verification step is skipped, cancelled, or only inferred.
-
----
-
-## 30. Expected final verification record
-
-The final verification record should explicitly state booleans or equivalent evidence for:
-
-- source checkpoint green
-- previous regression contracts green
-- v0.12.1 UX contracts green
-- native build green
-- native tests green
-- generated NSIS payload verified
-- branded setup built
-- clean install green
-- upgrade install green
-- installed executable matches expected native payload
-- installed copy launched
-- installed copy remained running through launch smoke test
-- exact branded uninstall green
-- research data preserved
-- version metadata consistent
-- no stale 0.9.0 UI version
-
----
-
-# PART VII: AGENT WORKFLOW
-
-## 31. How an agent should pick up this project
-
-Follow this order.
-
-### Step 1: Read context
-
-Read:
-
-- this `AGENTS.md`
-- `README.md`
-- current v0.12 analysis workflow
-- current Windows final workflow
-- current build-status files
-
-### Step 2: Establish baseline
-
-Reconstruct or retrieve the exact green v0.12 source.
-
-Run existing tests before making changes.
-
-Do not debug a new failure until you know whether it existed before your change.
-
-### Step 3: Work one phase at a time
-
-Recommended implementation order:
-
-1. installer diagnostics
-2. maintenance/update reliability
-3. version unification
-4. installer typography/layout
-5. global app typography
-6. bottom dock and stray-line bugs
-7. Code workspace
-8. Data workspace
-9. Themes/Analyse/Write hardening
-10. accessibility/responsive matrix
-11. visual regression tests
-12. upgrade CI
-13. manual QA
-14. exact final release
-
-### Step 4: Add tests with fixes
-
-Every bug fix should include a test or contract capable of detecting recurrence where practical.
-
-Examples:
-
-- stale version string -> version consistency test
-- clipped inspector tabs -> layout/overflow test
-- bottom dock overlap -> reserved-space assertion
-- upgrade failure -> previous-version upgrade CI
-- empty participant punctuation -> rendered-state test
-
-### Step 5: Keep changes reviewable
-
-Prefer focused commits grouped by problem rather than one giant opaque patch.
-
-Suggested commit categories:
-
-- `fix(installer): ...`
-- `fix(ui): ...`
-- `refactor(styles): ...`
-- `test(ui): ...`
-- `test(installer): ...`
-- `ci: ...`
-- `docs: ...`
-
-### Step 6: Do not declare success from local source checks alone
-
-Source green is an intermediate milestone.
-
-Windows native install and upgrade verification are the release gate.
-
----
-
-## 32. What agents must not do
-
-- Do not start major v0.13 AI work before v0.12.1 is green.
-- Do not replace the entire UI architecture unnecessarily.
-- Do not abandon `Data -> Code -> Themes -> Analyse -> Write`.
-- Do not make text smaller to solve overflow.
-- Do not hide an overlap behind another overlay.
-- Do not remove research features just to simplify onboarding.
-- Do not delete project data during uninstall tests.
-- Do not silently introduce cloud dependency into core workflows.
-- Do not treat source ZIPs or scaffolding as the final deliverable.
-- Do not use a mock installer payload in final verification.
-- Do not claim update support unless an actual previous installed version has been upgraded successfully.
-- Do not weaken existing v0.12 tests to make a new build pass.
-- Do not suppress installer errors without preserving actionable diagnostics.
-- Do not expose research content in logs.
-
----
-
-## 33. UX decision rules
-
-When uncertain, use these rules.
-
-### If two controls compete for attention
-
-Prioritize the control needed for the user's current task. Move the advanced option to secondary styling, an overflow menu, or progressive disclosure.
-
-### If text does not fit
-
-Fix layout or allow intentional wrapping. Do not immediately shrink the font.
-
-### If a panel needs horizontal scrolling for its own navigation
-
-Treat that as a layout defect unless the content itself is inherently wide, such as a matrix.
-
-### If a fixed/floating element covers content
-
-The layout must reserve its space. Do not rely on users scrolling content behind it.
-
-### If data is missing
-
-Hide absent metadata instead of displaying placeholder punctuation.
-
-### If an operation fails
-
-Tell the user what happened, whether their project is safe, and what they can do next.
-
-### If an advanced research term is unavoidable
-
-Use plain-language explanation nearby. Trace should support expert work without requiring every user to already speak QDA software jargon.
-
----
-
-## 34. UX success criteria
-
-The hardening effort should move Trace toward these qualities:
-
-- readable for hours
-- calm rather than crowded
-- obvious first actions
-- advanced features available without overwhelming onboarding
-- no hidden or overlapping content
-- predictable navigation
-- helpful empty states
-- recoverable failures
-- safe project handling
-- reliable update behavior
-- strong keyboard and DPI behavior
-
-A new researcher should understand the basic workflow without reading a manual.
-
-An experienced qualitative researcher should still be able to reach advanced tools quickly.
-
----
-
-## 35. Progress ledger
-
-Agents should update this section only when a phase is demonstrably completed and its acceptance tests are green.
-
-Current status at creation of this guide:
-
-- [x] v0.12 source gate verified
-- [x] v0.12 exact Windows clean-install release verified
-- [x] v0.12 native app launch verified in CI
-- [x] v0.12 uninstall data-preservation sentinel verified in CI
-- [ ] v0.12.1 source baseline prepared
-- [ ] 9 percent maintenance failure diagnosed
-- [ ] maintenance/update reliability fixed
-- [ ] installer version authority unified
-- [ ] installer typography/layout hardened
-- [ ] global application typography hardened
-- [ ] bottom dock overlap fixed
-- [ ] stray blue/green line bug fixed
-- [ ] Code workspace hardened
-- [ ] Data workspace simplified
-- [ ] Themes/Analyse/Write hardening complete
-- [ ] accessibility and DPI matrix green
-- [ ] visual regression tests green
-- [ ] previous-version upgrade CI green
-- [ ] real-machine manual QA green
-- [ ] exact v0.12.1 Windows release green
-
----
-
-## 36. Handoff requirements
-
-Before handing work to another agent, leave enough evidence for the next agent to continue without rediscovering the state.
-
-Record:
+# Agent workflow and handoff
+
+Before making material changes:
+
+1. Read this entire file.
+2. Read `PROGRESS.md`.
+3. Inspect the current branch and exact source lineage.
+4. Run the relevant existing regression tests before changing behaviour.
+5. Work phase by phase and keep commits focused.
+6. Add regression coverage for each bug class where practical.
+7. Verify the installed Windows application, not only source code or browser fixtures.
+8. Update `PROGRESS.md` before handoff.
+
+Every handoff must record:
 
 - branch and commit SHA
-- phase being worked on
+- master-contract items or phase being worked on
 - tests run
 - tests passing
 - tests failing
@@ -1407,19 +414,7 @@ Record:
 - workflow run IDs
 - artifact names
 - known unresolved issues
-- any intentional deviations from this guide and why
+- physical-UAT findings where relevant
+- intentional deviations from this contract and the product reason
 
-If a CI run fails, do not merely say `CI failed`. Name the exact step and error.
-
-If a release is green, record the exact installer SHA-256 and verification run ID.
-
----
-
-## 37. Final release rule
-
-Trace v0.12.1 is complete only when the release pipeline proves both of these realities:
-
-1. A new user can install and use Trace cleanly.
-2. An existing user can update Trace without losing research work.
-
-Anything less is an intermediate build.
+Do not claim success from source checks alone. Do not claim UX completion from attractive screenshots alone. The installed application and the real researcher journey are the deliverables.
