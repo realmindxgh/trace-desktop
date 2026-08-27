@@ -214,6 +214,9 @@ jobs:
           node control/ci/ux_v2_installed_webview_smoke.mjs
           $smokeExit=$LASTEXITCODE
           if($smokeExit -ne 0){ throw "Installed WebView2 researcher journey failed with exit code $smokeExit." }
+          node control/ci/ux_v2_installed_backup_export_smoke.mjs
+          $recoveryExit=$LASTEXITCODE
+          if($recoveryExit -ne 0){ throw "Installed findings export and backup recovery journey failed with exit code $recoveryExit." }
           & $setup --silent-uninstall --install-dir $installDir
           if($LASTEXITCODE -ne 0){ throw "Post-smoke uninstall failed with exit code $LASTEXITCODE." }
 
@@ -258,6 +261,9 @@ jobs:
           installed_webview_no_fixture_or_phantom_participant=true
           installed_webview_researcher_journey_green=true
           installed_webview_close_reopen_persistence_green=true
+          installed_webview_findings_export_green=true
+          installed_webview_verified_backup_green=true
+          installed_webview_backup_restore_green=true
           maintenance_matrix_green=true
           rollback_verification_green=true
           physical_real_machine_uat=false
