@@ -82,7 +82,7 @@ elif "addEventListener('click',pickAndOpenLocalProject)" not in app:
 
 old="document.querySelectorAll('[data-home-project]').forEach(btn=>btn.addEventListener('click',async()=>{const h=homeProjects[Number(btn.dataset.homeProject)];if(h)await switchToNativeHandle(h)}));"
 new=old+"\n  document.querySelectorAll('[data-locate-project]').forEach(btn=>btn.addEventListener('click',()=>locateLocalProject(Number(btn.dataset.locateProject))));document.querySelectorAll('[data-remove-project]').forEach(btn=>btn.addEventListener('click',()=>removeUnavailableProject(Number(btn.dataset.removeProject))));document.querySelectorAll('[data-restore-project]').forEach(btn=>btn.addEventListener('click',()=>restoreUnavailableProject(Number(btn.dataset.restoreProject))));"
-if old in app and 'data-locate-project]' not in app:
+if old in app and "querySelectorAll('[data-locate-project]')" not in app:
     app=app.replace(old,new,1)
 
 rust_anchor='#[tauri::command]\nasync fn pick_whisper_model(app:tauri::AppHandle)->Result<Option<WhisperModelInfo>,String>{'
@@ -133,12 +133,5 @@ for assertion in [
     "assert 'UX_V2_RECENT_PROJECT_RECOVERY' in css\n",
 ]:
     if assertion not in t:t+='\n'+assertion
-# expose Rust file to the existing static contract script if not already present
-if "rust = Path('src-tauri/src/lib.rs').read_text" not in t:
-    t="from pathlib import Path\n"+t.replace('from pathlib import Path\n','',1)
-    insert="rust = Path('src-tauri/src/lib.rs').read_text(encoding='utf-8')\n"
-    pos=t.find("app = ")
-    if pos<0: raise SystemExit('Static contract app load anchor missing')
-    t=t[:pos]+insert+t[pos:]
 test_path.write_text(t,encoding='utf-8')
 print('Recent-project locate/remove/restore resilience hotfix applied')
