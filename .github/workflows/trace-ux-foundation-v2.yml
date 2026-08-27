@@ -1,0 +1,179 @@
+name: Trace UX Foundation v2 gate
+
+on:
+  push:
+    branches: [trace-ux-foundation-v2]
+    paths:
+      - '.github/workflows/trace-ux-foundation-v2.yml'
+      - 'bootstrap/ux-foundation-v2/**'
+      - 'docs/TRACE_UX_FOUNDATION_EXECUTION_PLAN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: trace-ux-foundation-v2
+  cancel-in-progress: true
+
+jobs:
+  ux-foundation:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-ux-v2-target
+    steps:
+      - name: Checkout UX control branch
+        uses: actions/checkout@v4
+        with:
+          ref: trace-ux-foundation-v2
+          path: control
+
+      - name: Download exact verified v0.12.1 source
+        shell: pwsh
+        run: |
+          gh run download 32723424461 --repo $env:GITHUB_REPOSITORY --name 'Trace-v0.12.1-Full-Checklist-Green-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve exact verified v0.12.1 source.' }
+          foreach ($required in @('work/index.html','work/src/app.js','work/src/styles.css','work/src-tauri/Cargo.toml','work/setup-shell/src/app.js','work/tests/v0121_full_checklist.py')) {
+            if (!(Test-Path $required)) { throw "Verified baseline is incomplete: $required" }
+          }
+
+      - name: Reconstruct UX Foundation overlay
+        shell: pwsh
+        run: |
+          $parts=Get-ChildItem control/bootstrap/ux-foundation-v2/part* | Sort-Object Name
+          if ($parts.Count -ne 5) { throw "Expected 5 UX overlay parts, found $($parts.Count)." }
+          $base64=($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
+          if ($base64.Length -ne 105800) { throw "UX overlay base64 length mismatch: $($base64.Length)" }
+          $archive=Join-Path $env:RUNNER_TEMP 'trace-ux-foundation-v2.tar.xz'
+          [IO.File]::WriteAllBytes($archive,[Convert]::FromBase64String($base64))
+          if ((Get-Item $archive).Length -ne 79348) { throw "UX overlay size mismatch: $((Get-Item $archive).Length)" }
+          $hash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '4867fd8d17f7f7b49b7c388eebc416e604475cb424c27f6b2bc2e9def702f2aa') { throw "UX overlay SHA mismatch: $hash" }
+          tar -xJf $archive -C work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not apply UX Foundation overlay.' }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Research engine and UX contracts
+        shell: pwsh
+        working-directory: work
+        run: |
+          function Check([string]$Label,[scriptblock]$Cmd){ & $Cmd; if($LASTEXITCODE -ne 0){throw "$Label failed with $LASTEXITCODE"} }
+          Check 'app JavaScript syntax' { node --check src/app.js }
+          Check 'UX Foundation static contract' { python tests/ux_foundation_v2_contract.py }
+          Check 'schema contract' { python tests/schema_contract.py }
+          Check 'Office and survey imports' { python tests/v11_imports_display.py }
+          Check 'coding and usability regression' { python tests/v11_usability.py }
+          Check 'local transcription regression' { python tests/v11_transcription.py }
+          Check 'PDF text regression' { python tests/v11_pdf_text.py }
+          Check 'analysis/intercoder regression' { python tests/v12_analysis.py }
+          Check 'v0.12.1 hardening regression' { python tests/v0121_hardening.py }
+          Check 'v0.12.1 full checklist regression' { python tests/v0121_full_checklist.py }
+          Check 'intercoder mathematics' { node tests/v12_analysis_math.mjs }
+          Check 'large-project workload contract' { node tests/v0121_workload.mjs }
+
+      - name: Build Trace frontend
+        shell: pwsh
+        working-directory: work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+
+      - name: Browser UX, first-launch and DPI gates
+        shell: pwsh
+        working-directory: work
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Playwright.' }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install Chromium.' }
+          $server=Start-Process -FilePath python -ArgumentList @('-m','http.server','4173','--bind','127.0.0.1') -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            node tests/ux_foundation_v2.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'UX Foundation browser contract failed.' }
+            node tests/v0121_layout.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Carried viewport/DPI matrix failed.' }
+          } finally {
+            if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+          }
+
+      - name: Native Rust compile and tests
+        shell: pwsh
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native tests failed.' }
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null
+          [IO.File]::WriteAllBytes('setup-shell/src-tauri/payload/trace-payload.exe',[byte[]](0x4D,0x5A))
+          try {
+            cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'Setup shell cargo check failed.' }
+            cargo test --manifest-path setup-shell/src-tauri/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'Setup shell tests failed.' }
+          } finally { Remove-Item setup-shell/src-tauri/payload/trace-payload.exe -Force -ErrorAction SilentlyContinue }
+
+      - name: Upload green UX source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-UX-Foundation-v2-Green-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            work/index.html
+            work/assets/**
+            work/package.json
+            work/package-lock.json
+            work/src/**
+            work/database/**
+            work/src-tauri/build.rs
+            work/src-tauri/Cargo.toml
+            work/src-tauri/Cargo.lock
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/src-tauri/icons/**
+            work/src-tauri/windows/**
+            work/setup-shell/**
+            work/tests/**
+            work/scripts/**
+
+      - name: Publish gate receipt
+        if: always()
+        shell: pwsh
+        working-directory: control
+        run: |
+          git reset --hard HEAD
+          git clean -fd
+          git pull --rebase origin trace-ux-foundation-v2
+          New-Item -ItemType Directory -Force -Path build-status | Out-Null
+          @"
+          run_id=${{ github.run_id }}
+          run_number=${{ github.run_number }}
+          source_sha=${{ github.sha }}
+          baseline_run=32723424461
+          result=${{ job.status }}
+          workflow=Trace UX Foundation v2 gate
+          verification=exact_v0121_baseline+ux_static_contract+all_carried_research_contracts+frontend_build+fresh_launch_browser+viewport_dpi_matrix+native_rust+setup_shell_tests
+          "@ | Set-Content build-status/ux-foundation-v2.txt
+          git config user.name 'trace-build-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add build-status/ux-foundation-v2.txt
+          if (git status --porcelain) {
+            git commit -m 'ci: record UX Foundation v2 gate result [skip ci]'
+            git push origin HEAD:trace-ux-foundation-v2
+          }
