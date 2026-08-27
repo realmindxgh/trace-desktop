@@ -53,11 +53,17 @@ elif new_bind not in app:
 app_path.write_text(app,encoding='utf-8')
 
 css=css_path.read_text(encoding='utf-8')
-if '/* UX_V2_SHARED_MODE_INSPECTOR */' not in css:
+marker='/* UX_V2_SHARED_MODE_INSPECTOR */'
+if marker not in css:
     css += r'''
 
 /* UX_V2_SHARED_MODE_INSPECTOR */
-.mode-shell{grid-template-columns:var(--trace-context) minmax(0,1fr) 7px minmax(300px,var(--right-inspector,340px))!important}.mode-shell>.right-resizer{display:block}.mode-inspector{border-left:1px solid var(--line);border-right:0;min-width:0;background:var(--panel2);overflow:auto}.mode-inspector-top{display:flex;align-items:center;justify-content:space-between;padding:13px 12px;border-bottom:1px solid var(--line)}.mode-inspector-top>div{display:flex;flex-direction:column;gap:2px}.mode-inspector-top small{font-size:12.5px;letter-spacing:.08em;color:var(--muted)}.mode-inspector-top b{font-size:14px;color:var(--ink)}.mode-shell.right-collapsed{grid-template-columns:var(--trace-context) minmax(0,1fr) 0 0!important}.mode-shell.right-collapsed>.mode-inspector,.mode-shell.right-collapsed>.right-resizer{display:none!important}
+.project-frame{grid-template-rows:minmax(0,1fr)}
+.project-frame>.app-rail{grid-column:1;grid-row:1;min-width:0}
+.project-frame>.workspace{grid-column:2;grid-row:1!important;min-width:0;width:100%;max-width:100%;position:relative;overflow:hidden}
+.mode-shell{grid-template-columns:var(--trace-context) minmax(0,1fr) 7px minmax(300px,var(--right-inspector,340px))!important;width:100%;max-width:100%;min-width:0;overflow:hidden}
+.mode-shell>.context-pane,.mode-shell>.mode-main,.mode-shell>.mode-inspector{min-width:0}
+.mode-shell>.right-resizer{display:block}.mode-inspector{border-left:1px solid var(--line);border-right:0;min-width:0;background:var(--panel2);overflow:auto}.mode-inspector-top{display:flex;align-items:center;justify-content:space-between;padding:13px 12px;border-bottom:1px solid var(--line)}.mode-inspector-top>div{display:flex;flex-direction:column;gap:2px}.mode-inspector-top small{font-size:12.5px;letter-spacing:.08em;color:var(--muted)}.mode-inspector-top b{font-size:14px;color:var(--ink)}.mode-shell.right-collapsed{grid-template-columns:var(--trace-context) minmax(0,1fr) 0 0!important}.mode-shell.right-collapsed>.mode-inspector,.mode-shell.right-collapsed>.right-resizer{display:none!important}
 @media(max-width:1180px){.mode-shell{grid-template-columns:var(--trace-context) minmax(0,1fr)!important}.mode-shell>.mode-inspector,.mode-shell>.right-resizer{display:none!important}}
 @media(max-width:840px){.mode-shell{grid-template-columns:1fr!important}}
 '''
@@ -67,6 +73,8 @@ test=test_path.read_text(encoding='utf-8')
 for assertion in [
     "assert 'renderModeInspector' in app\n",
     "assert 'UX_V2_SHARED_MODE_INSPECTOR' in css\n",
+    "assert 'grid-row:1!important' in css\n",
+    "assert 'grid-column:2' in css\n",
 ]:
     if assertion not in test:
         test+='\n'+assertion
@@ -76,4 +84,4 @@ check=app_path.read_text(encoding='utf-8')
 for required in ('renderModeInspector','Resize inspector','mode-inspector'):
     if required not in check:
         raise SystemExit(f'Shared inspector contract missing: {required}')
-print('Shared contextual inspector hotfix applied')
+print('Shared contextual inspector and project-frame geometry hotfix applied')
