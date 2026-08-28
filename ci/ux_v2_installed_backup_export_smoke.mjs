@@ -16,23 +16,43 @@ const { chromium }=requireFromSource('playwright');
 const failures=[];
 const check=(ok,msg)=>{if(!ok)failures.push(msg)};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const webViewPolicyRoot=String.raw`HKCU\Software\Policies\Microsoft\Edge\WebView2`;
+const webViewPolicyValue=path.basename(exe);
+function reg(args,label,required=true){
+  const result=spawnSync('reg.exe',args,{windowsHide:true,encoding:'utf8'});
+  if(required&&result.status!==0)throw new Error(`${label} failed (${result.status}): ${result.stderr||result.stdout}`);
+  return result;
+}
+function clearWebViewPolicy(){
+  reg(['delete',`${webViewPolicyRoot}\AdditionalBrowserArguments`,'/v',webViewPolicyValue,'/f'],'WebView2 browser-argument policy cleanup',false);
+  reg(['delete',`${webViewPolicyRoot}\UserDataFolder`,'/v',webViewPolicyValue,'/f'],'WebView2 user-data policy cleanup',false);
+}
+function configureWebViewPolicy(port){
+  clearWebViewPolicy();
+  reg(['add',`${webViewPolicyRoot}\AdditionalBrowserArguments`,'/v',webViewPolicyValue,'/t','REG_SZ','/d',`--remote-debugging-port=${port} --remote-allow-origins=*`,'/f'],'WebView2 browser-argument policy setup');
+  reg(['add',`${webViewPolicyRoot}\UserDataFolder`,'/v',webViewPolicyValue,'/t','REG_SZ','/d',userData,'/f'],'WebView2 user-data policy setup');
+}
+process.on('exit',clearWebViewPolicy);
 function killTree(pid){if(!pid)return;spawnSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}
 async function launchInstalled(port){
-  const env={...process.env,WEBVIEW2_USER_DATA_FOLDER:userData,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-allow-origins=*`};
+  configureWebViewPolicy(port);
+  const env={...process.env};
+  delete env.WEBVIEW2_USER_DATA_FOLDER;
+  delete env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS;
   const child=spawn(exe,[],{env,windowsHide:false,stdio:'ignore'});
   let browser=null,last=null;
   for(let i=0;i<90;i++){
-    if(child.exitCode!==null)throw new Error(`Installed Trace exited before WebView2 became available (exit ${child.exitCode}).`);
+    if(child.exitCode!==null){clearWebViewPolicy();throw new Error(`Installed Trace exited before WebView2 became available (exit ${child.exitCode}).`)}
     try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);break}catch(err){last=err;await wait(500)}
   }
-  if(!browser){killTree(child.pid);throw new Error(`Could not attach to installed WebView2: ${String(last)}`)}
+  if(!browser){killTree(child.pid);clearWebViewPolicy();throw new Error(`Could not attach to installed WebView2: ${String(last)}`)}
   let page=browser.contexts().flatMap(c=>c.pages()).find(p=>!/^devtools:/i.test(p.url()));
   if(!page){await wait(500);page=browser.contexts().flatMap(c=>c.pages())[0]}
-  if(!page){await browser.close().catch(()=>{});killTree(child.pid);throw new Error('Installed Trace exposed no WebView page.')}
+  if(!page){await browser.close().catch(()=>{});killTree(child.pid);clearWebViewPolicy();throw new Error('Installed Trace exposed no WebView page.')}
   await page.waitForSelector('body',{timeout:20000});
   return {child,browser,page};
 }
-async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);await wait(1200)}
+async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);clearWebViewPolicy();await wait(1200)}
 
 const session=await launchInstalled(9333);
 const page=session.page;
