@@ -2,215 +2,260 @@
 
 This is the live execution ledger for Trace Desktop. Read it after `AGENTS.md`.
 
-- `AGENTS.md` is now the **240-point Trace UX Foundation master product and execution contract**.
-- `docs/v0121-checklist-status.md` records the completed v0.12.1 engineering-hardening checklist.
-- `PROGRESS.md` records what has actually happened, with evidence and the exact continuation point.
+- `AGENTS.md` is the authoritative **240-point Trace UX Foundation master contract**.
+- `docs/TRACE_UX_FOUNDATION_CLOSURE.md` is the item-by-item closure ledger.
+- `docs/TRACE_DESIGN_SYSTEM.md` is the normative UI system.
+- `docs/v0121-checklist-status.md` and the historical section below preserve the verified v0.12.1 engineering baseline.
 
 Any agent making a material change must update this ledger before handoff.
 
 ## Current snapshot
 
-**Date:** 2026-08-27  
-**Branch:** `main`  
+**Date:** 2026-08-28  
+**Active branch:** `trace-ux-foundation-v2`  
 **Verified engineering baseline:** `0.12.1`  
-**Current milestone:** Trace UX Foundation  
-**Status:** **v0.12.1 ENGINEERING BASELINE VERIFIED; 240-POINT UX FOUNDATION CONTRACT ACTIVE**
+**Current milestone:** Trace UX Foundation final acceptance  
+**Status:** **STRICT UX SOURCE GREEN; WINDOWS INSTALLED ACCEPTANCE IN PROGRESS; PHYSICAL UAT PENDING**
 
-The final v0.12.1 Windows engineering verification remains valid. The exact final-v2 release artifact came from run `32724433832`.
+The application-shell redesign and automated source-side implementation of the 240-point contract are at the acceptance boundary. Do not restart Phase 1. Do not use the older v0.12.1 hardening checklist as the current definition of done.
 
-However, the v0.12.1 hardening checklist is no longer the full product definition of done. On 2026-08-27 the complete 240-point Trace UX/UI master backlog was promoted into `AGENTS.md` as the authoritative UX Foundation contract. That contract explicitly permits rebuilding the application shell and information architecture while preserving the working research engine.
+The current finish line is:
 
-The previous statement that only physical UAT remained applied to the narrower v0.12.1 engineering-hardening checklist. Under the new master contract, substantial UX Foundation work remains before the product UX can be called complete.
+`strict green UX source -> installed Windows acceptance -> physical real-machine UAT -> final closure/promotion`
 
-## Contract transition
+## Exact current UX source candidate
 
-Commit `cd69e2246bce0de0d76505f4701e2855e0766b27` replaced the old hardening-only `AGENTS.md` mission with the 240-point Trace UX Foundation master contract.
+Strict source gate:
 
-The new contract establishes these eight phases:
+- workflow: `Trace UX Foundation v2 gate`
+- run: `33152414998`
+- result: `success`
+- source/control SHA: `69b5f788f6b5723140efcc1e9fe970191e2225a3`
+- artifact: `Trace-UX-Foundation-v2-Green-Source`
+- artifact digest: `sha256:510adf1546f00b5160ed530adfa57d51c14b01eaf945776e6b7db732c7104787`
 
-1. production-state hygiene, Home and first launch
-2. navigation architecture and the context-pane/workspace/inspector shell
-3. typography, spacing, component design and responsive behaviour
-4. Data/import/source/participant workflows
-5. Code, Themes, Analyse and Write within the shared shell
-6. contextual Trace AI
-7. keyboard productivity, command palette, accessibility and advanced interaction polish
-8. visual and first-launch regression gates in the Windows release pipeline
+Run `33152414998` proved:
 
-The target desktop shell is now:
-
-`Navigation rail | Context pane | Main workspace | Inspector`
-
-The existing Data -> Code -> Themes -> Analyse -> Write research model remains the conceptual backbone, but the old giant floating bottom dock is not a protected architectural requirement.
-
-The master completion rule now requires the real end-to-end researcher journey to be exercised:
-
-`create project -> import data -> organise participants -> code passages -> create notes/memos -> build themes -> analyse -> write/export -> close -> reopen -> recover/backup`
-
-## Main-branch promotion
-
-On 2026-08-27, `main` was fast-forwarded from the stale pre-v0.12 line to the verified v0.12.1 lineage. A normal clone of the default branch now receives the v0.12.1 engineering baseline rather than the older snapshot.
-
-The promotion triggered an old v0.10 status workflow on `main`; its status-recording commit is historical CI bookkeeping and does not redefine the verified v0.12.1 release evidence below.
-
-## Physical UAT tracking
-
-GitHub issue #5, `v0.12.1 final physical UAT`, tracks the real-machine acceptance work that could not be truthfully substituted by CI.
-
-That issue remains useful as validation of the v0.12.1 baseline, but closing it alone will not close the 240-point UX Foundation contract.
-
-## Previously proven intermediate release
-
-Source gate:
-- run `32649590459`
-- result `success`
-- artifact `Trace-v0.12.1-Hardening-Green-Source`
-
-Intermediate Windows release:
-- run `32651178336`
-- result `success`
-- artifact `Trace-v0.12.1-Exact-Verified-Windows-Release`
-- branded installer SHA-256 `8bdd651c64cb787cc0f0d6da3eb5331b0240d8b7c76a5bf8a29a371ad700c4f4`
-
-That build proved clean install, installed-copy launch, uninstall preservation, real v0.12 -> v0.12.1 upgrade, and a running-process update scenario. It is superseded by the final-v2 release below.
-
-## Expanded v0.12.1 full-checklist implementation
-
-The expanded source was reconstructed from the exact green v0.12.1 source artifact from run `32649590459`, then received the committed full-checklist and installer-hardening transforms.
-
-Implemented areas include:
-- persistent/resizable/collapsible Data and Inspector rails
-- remembered transcript scroll position per source
-- multi-file import, drag-and-drop, import queue, isolated failure states, duplicate handling
-- theme evidence inspection
-- stronger Analyse matrix behavior and sticky identifiers
-- Write autosave and save-state feedback
-- context-aware search behavior
-- modal focus trapping and Escape handling
-- visible keyboard focus and larger targets
-- reduced-motion and responsive desktop breakpoints
-- typography readability floor
-- running-app installer preflight
-- writeability/partial-install checks
-- repair mode
-- application-file snapshot and rollback helpers that exclude research-data areas
-
-These remain valuable foundations but should not be mistaken for completion of the new shell and information-architecture requirements in `AGENTS.md`.
-
-## Full-checklist Windows gate history
-
-### Run `32698021215`
-- source reconstruction completed
-- first failing carried contract was `v11_usability.py`
-- cause: duplicated insertion in the generated `renderThemes()` / `buildAnalysisIndex()` source
-- action: corrected the once-only finalizer logic
-
-### Run `32698173746`
-- stopped in reconstruction before tests
-- cause: portable text-file SHA check disagreed after Windows CRLF checkout normalization
-- action: replaced the checkout-byte integrity assumption
-
-### Run `32698269359`
-- stopped in reconstruction before tests
-- cause: the large plaintext finalizer blob had been corrupted during transport
-- action: removed plaintext finalizer transport and moved to a binary-safe compressed finalizer bundle
-
-### Run `32698675246`
-This was the first successful exact reconstruction using the binary-safe finalizer path.
-
-Green in this run:
-- exact v0.12.1 base source download
-- exact base reconstruction bundle SHA verification
-- exact finalizer compressed/raw SHA verification
-- application JavaScript syntax
-- setup-shell JavaScript syntax
-- v0.12 intercoder mathematics
+- deterministic reconstruction from the exact verified v0.12.1 source baseline
+- Trace UX Foundation static contract
 - schema contract
-- Office/survey/display regression
-- usability regression
-- transcription regression
-- PDF regression
-- v0.12 analysis/intercoder regression
-- original v0.12.1 hardening contract
-- expanded full-checklist static contract
-- 10,000-reference / 500-source workload contract (`5.2ms` in CI)
-- Trace frontend build
-- Trace Setup frontend build
+- Office/survey imports
+- coding/usability regressions
+- local transcription regressions
+- PDF text regressions
+- analysis/intercoder regressions and mathematics
+- v0.12.1 hardening/full-checklist contracts
+- 500-source / 10,000-reference workload contract
+- both frontend builds
+- full browser researcher journey
+- truthful zero/populated-state checks
+- trust/error/destructive-action checks
+- responsive/DPI/layout gates
+- strict reviewed visual-regression baseline
+- native Trace Rust compile/tests
+- setup-shell Rust compile/tests
 
-First failure:
-- browser viewport/DPI matrix
-- Playwright timed out waiting for `[data-section="Data"]`
+This is the only source artifact currently eligible for Windows acceptance unless superseded by a later fully green strict source run.
 
-Root cause:
-- the new accessibility `MutationObserver` tried to observe `#modal-root` before the first application render had created that node
-- the resulting runtime exception prevented the UI from rendering, so the browser test never reached a layout assertion
+## Reviewed visual baseline
 
-Correction:
-- the finalizer now attaches the observer to the already-existing application host instead
-- the corrected finalizer was regenerated from a clean source and validated as once-only/syntax-clean
-- corrected raw finalizer: `32665` bytes, SHA-256 `ddda44167b37b0f090552885901031d67fcb8feca08cb2effa42fa3b9df631ef`
-- corrected compressed finalizer: `9288` bytes, SHA-256 `5f26a74248f9b7a8147f9c5f4922156bb36c5bebbd4f1c866780d0dce0ac1389`
+The corrected eight-screen visual candidate was manually reviewed from run `33117906540` after fixing the stale `24407h ago` timestamp presentation.
 
-## Final full-checklist source gate
+Reviewed visual artifact digest:
 
-Run `32723424461` completed successfully from source SHA `a5bdc5335264db679d8cc98abac5b73a18effb3d`.
+`sha256:20bf964fef8ab8721d5d89c0b2b0d77c3781bb9ec1712bd5effcef6eb2c63e93`
 
-The green source gate proved:
-- all carried research and regression contracts
-- both frontends
-- the browser viewport/DPI matrix
-- native Rust compilation and unit tests
-- the NSIS custom-path raw-argument fix
+The strict source gate now compares deterministic screenshots against that reviewed baseline rather than silently regenerating it.
 
-The exact source artifact was `Trace-v0.12.1-Full-Checklist-Green-Source` with digest `sha256:dad38e53e5149190d97c65762cb4362accc84467f38c1b59c2aa97216cca123e`.
+Required screens include:
 
-## Final Windows release verification
+- Home
+- empty Project Overview
+- Data
+- Code with visible coding
+- Themes
+- Analyse
+- Write
+- Code at 1366x768 / 125% scaling
 
-Run `32724433832` completed successfully as `Trace Windows v0.12.1 exact final v2`.
+Structural checks also cover font floor, root overflow, pane visibility and source-identity/document-tab collision.
 
-Final artifact:
-- `Trace-v0.12.1-Exact-Verified-Windows-Release`
-- artifact SHA-256 `233e76f199eb711f1de4fa02cc9cf95bdc3062e46e40cffa7239f06c921472f9`
-- artifact expires `2026-09-23`
-- final `TraceSetup.exe` SHA-256 `262186eea6ca1dc70c267ac81278cd0f77960e4a7525cc62b0d8ffbaeb0ba77d`
+## Windows installed acceptance
 
-The final-v2 workflow passed all of these gates:
-- exact full-checklist source reconstruction
-- carried research contracts
-- native Trace compile and tests
-- setup-shell compile and tests
-- generated native NSIS payload equivalence
-- exact branded clean installation
-- installed executable hash equivalence with the native reference
-- installed-copy launch and survival test
-- clean uninstall
-- closed v0.12 -> v0.12.1 upgrade
-- upgraded-copy hash and launch verification
-- safe running-process update block with old executable preservation
-- successful retry after closing Trace
-- same-version missing-EXE repair
-- missing-uninstaller recovery
-- custom install path containing spaces
-- custom-path maintenance and uninstall
-- forced rollback with exact application-byte restoration
-- successful maintenance retry after rollback
-- research-project and verified-backup preservation through maintenance, rollback, and uninstall
-- version consistency and removal of stale `0.9.0`
+Current workflow:
 
-Maintenance matrix evidence recorded all scenarios as green.
-Rollback evidence recorded exact application-byte restoration and successful post-rollback maintenance.
+- workflow: `Trace UX Foundation Windows acceptance`
+- run: `33154626340`
+- run number: `2`
+- release-control SHA: `e312fea034f42af9ddc84a6d21a4837a4171f008`
+- source pointer: run `33152414998`
+- status at this ledger update: `IN PROGRESS`
 
-## Current continuation point
+Already green in the Windows acceptance run:
 
-Begin **Trace UX Foundation Phase 1** from the verified v0.12.1 baseline on `main`.
+- exact source pointer and artifact digest resolution
+- exact green source download
+- exact historical v0.12 installer download for upgrade/maintenance comparison
+- Node/Python/Rust setup
+- full research + UX source-contract replay
+- both frontend builds
+- browser researcher journey
+- strict visual evidence
+- viewport/DPI replay
+- branded setup verification CLI staging
 
-The first implementation target is production-state hygiene, Home and first launch. Prove that a genuinely fresh installed copy:
+Current long-running stage at this ledger update:
 
-- opens to Trace Home
-- contains no development/demo/fixture project
-- contains no phantom participant such as `P01`
-- does not show source-specific or transcript-specific controls without a real source
-- offers New Project, Open Project, Import Project and Recover from backup clearly
-- can create a short-form new project and land on a purposeful Project Overview
+- native Tauri release bundle build
 
-Preserve the existing v0.12.1 research and data-preservation gates while the shell is rebuilt.
+Still to run in the same Windows acceptance lane:
+
+1. stage native NSIS payload and build branded `TraceSetup.exe`
+2. establish exact installed native reference/hash
+3. install the branded candidate
+4. attach Playwright over CDP to the actual installed Tauri/WebView2 application
+5. verify fresh Home/no fixture/no phantom participant
+6. execute real TXT/XLSX/PDF/WAV research workflow
+7. create/apply code, memo, theme, Analyse and Write findings
+8. close/relaunch and prove persistence
+9. export findings
+10. create a verified backup and restore it as a new project
+11. run branded maintenance/update/repair matrix
+12. run rollback verification
+13. upload installed evidence and the Windows acceptance build
+
+Do not call the Windows build green until all of those stages succeed.
+
+## 240-point closure ledger
+
+`docs/TRACE_UX_FOUNDATION_CLOSURE.md` was created as the explicit 1–240 acceptance receipt.
+
+It separates:
+
+- `S`: strict source evidence
+- `V`: reviewed visual evidence
+- `L`: large-project evidence
+- `R`: carried research/data-preservation evidence
+- `W`: installed Windows acceptance still required
+- `P`: physical real-machine UAT still required
+- `RESOLVED`: intentionally conditional/not-literal product resolution
+
+Do not write `240/240 COMPLETE` while any required `W` or `P` boundary remains.
+
+## Physical real-machine UAT
+
+GitHub issue #5 is now titled:
+
+`Trace UX Foundation final physical UAT`
+
+It supersedes its original narrower v0.12.1-only purpose and now tracks final human-machine acceptance of the 240-point contract.
+
+After Windows acceptance turns green, update issue #5 with:
+
+- exact Windows acceptance run
+- artifact name/digest
+- exact `TraceSetup.exe` SHA-256
+
+Then test only that exact build on the real Windows machine.
+
+Physical UAT covers:
+
+- installer readability at actual Windows scaling
+- first-launch comprehension and truthful state
+- Home
+- Data / Code / Themes / Analyse / Write
+- shell, panes, tabs and inspector behaviour
+- real transcript/XLSX/PDF/media use
+- coding/memos/themes/analysis/writing/export
+- close/reopen persistence
+- backup/restore
+- keyboard/focus/accessibility
+- errors and destructive-action clarity
+- maintenance/recovery where practical
+
+Any physical-UAT defect must be fixed and the affected automated gates rerun before final closure.
+
+## UX Foundation implementation summary
+
+The active branch now includes, among other work:
+
+- deliberate Trace Home and first-launch experience
+- production-state hygiene and phantom-participant fixes
+- recent projects, recovery and optional Getting Started
+- short New Project flow and Project Overview
+- permanent left navigation rail
+- contextual Data/Code/Themes/Analyse/Write panes
+- Sources / Participants-Cases / Attributes / Collections-Sets / Imports IA
+- document/source tabs and source identity strip
+- contextual shared inspector, resize/collapse and layout memory
+- separate Project Settings and Application Settings
+- Compact / Comfortable / Large interface sizing
+- contextual Trace AI
+- command palette and keyboard shortcuts
+- contextual search
+- reusable keyboard-accessible context menus
+- distinct layout-memory vs exact-workspace-resume preferences
+- first-class media transcription workflow
+- aggregate import summaries and next actions
+- human/actionable error dialogs with technical-detail disclosure
+- destructive-action consequence previews
+- stable save-state presentation
+- formal Trace design system
+- strict perceptual visual regression
+- realistic installed-app acceptance scripts
+- real TXT/XLSX/PDF/WAV acceptance fixtures
+- findings export + verified backup/restore installed test
+- Windows maintenance/rollback acceptance lane
+
+The research engine underneath remains protected by the full carried regression suite.
+
+## CI hygiene
+
+The obsolete one-shot `.github/workflows/v0121-wire-layout-fix.yml` was retired from `trace-ux-foundation-v2` at commit `67f82797b81a2337cd91bc0e3b3782d35c3fdc9f`.
+
+That workflow was historical v0.12.1 wiring machinery, not a product test, and was producing meaningless red noise on UX branch commits. The historical `trace-v0121` branch was not altered.
+
+## Historical v0.12.1 engineering baseline
+
+The final pre-UX v0.12.1 engineering verification remains valid and must not be discarded.
+
+Final full-checklist source gate:
+
+- run `32723424461`
+- source SHA `a5bdc5335264db679d8cc98abac5b73a18effb3d`
+- artifact `Trace-v0.12.1-Full-Checklist-Green-Source`
+- digest `sha256:dad38e53e5149190d97c65762cb4362accc84467f38c1b59c2aa97216cca123e`
+
+Final exact Windows v0.12.1 release verification:
+
+- run `32724433832`
+- artifact `Trace-v0.12.1-Exact-Verified-Windows-Release`
+- artifact digest `sha256:233e76f199eb711f1de4fa02cc9cf95bdc3062e46e40cffa7239f06c921472f9`
+- `TraceSetup.exe` SHA-256 `262186eea6ca1dc70c267ac81278cd0f77960e4a7525cc62b0d8ffbaeb0ba77d`
+
+That verified clean install, launch, uninstall, v0.12 -> v0.12.1 upgrade, running-process safety, repair, missing-uninstaller recovery, custom paths, rollback, research-project preservation, verified-backup preservation and version consistency.
+
+The UX Foundation preserves and reruns those research/data-safety contracts while replacing the application shell.
+
+## Exact continuation point
+
+Do **not** begin a new UX phase.
+
+Continue with Windows acceptance run `33154626340`.
+
+If it fails:
+
+1. read the exact failing step/log,
+2. classify it as product, installed-app test, installer, or acceptance-infrastructure defect,
+3. fix the real defect without weakening an existing research/visual/data-preservation contract,
+4. if the green source artifact itself changes, run a new strict source gate before repointing Windows acceptance,
+5. rerun Windows acceptance from the exact eligible artifact.
+
+If it succeeds:
+
+1. record the exact Windows artifact names/digests and `TraceSetup.exe` SHA-256,
+2. update `docs/TRACE_UX_FOUNDATION_CLOSURE.md` to close the `W` boundary,
+3. update issue #5 with the exact build to physically test,
+4. perform physical real-machine UAT,
+5. fix/retest any physical defect,
+6. only then mark the 240-point Trace UX Foundation complete and consider promotion to `main` / final release acceptance.
