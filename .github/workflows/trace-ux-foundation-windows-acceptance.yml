@@ -23,7 +23,6 @@ jobs:
       PYTHONUTF8: '1'
       GH_TOKEN: ${{ github.token }}
       SOURCE_ARTIFACT: Trace-UX-Foundation-v2-Green-Source
-      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-ux-acceptance-target
     steps:
       - name: Checkout UX release control
         uses: actions/checkout@v4
