@@ -55,8 +55,31 @@ diagnose('smoke-start',{exe,playwrightRoot,userData,importFile,surveyFile,pdfFil
 const failures=[];
 const check=(ok,msg)=>{if(!ok)failures.push(msg)};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const webViewPolicyRoot=String.raw`HKCU\Software\Policies\Microsoft\Edge\WebView2`;
+const webViewPolicyValue=path.basename(exe);
+function reg(args,label,required=true){
+  const result=spawnSync('reg.exe',args,{windowsHide:true,encoding:'utf8'});
+  if(required&&result.status!==0)throw new Error(`${label} failed (${result.status}): ${result.stderr||result.stdout}`);
+  return result;
+}
+function clearWebViewPolicy(){
+  reg(['delete',`${webViewPolicyRoot}\AdditionalBrowserArguments`,'/v',webViewPolicyValue,'/f'],'WebView2 browser-argument policy cleanup',false);
+  reg(['delete',`${webViewPolicyRoot}\UserDataFolder`,'/v',webViewPolicyValue,'/f'],'WebView2 user-data policy cleanup',false);
+}
+function configureWebViewPolicy(port){
+  clearWebViewPolicy();
+  reg(['add',`${webViewPolicyRoot}\AdditionalBrowserArguments`,'/v',webViewPolicyValue,'/t','REG_SZ','/d',`--remote-debugging-port=${port} --remote-allow-origins=*`,'/f'],'WebView2 browser-argument policy setup');
+  reg(['add',`${webViewPolicyRoot}\UserDataFolder`,'/v',webViewPolicyValue,'/t','REG_SZ','/d',userData,'/f'],'WebView2 user-data policy setup');
+  const browserPolicy=reg(['query',`${webViewPolicyRoot}\AdditionalBrowserArguments`,'/v',webViewPolicyValue],'WebView2 browser-argument policy verification');
+  const dataPolicy=reg(['query',`${webViewPolicyRoot}\UserDataFolder`,'/v',webViewPolicyValue],'WebView2 user-data policy verification');
+  diagnose('webview-policy-configured',{port,appId:webViewPolicyValue,browserPolicy:(browserPolicy.stdout||'').trim(),dataPolicy:(dataPolicy.stdout||'').trim()});
+}
+process.on('exit',clearWebViewPolicy);
 async function launchInstalled(port){
-  const env={...process.env,WEBVIEW2_USER_DATA_FOLDER:userData,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-allow-origins=*`};
+  configureWebViewPolicy(port);
+  const env={...process.env};
+  delete env.WEBVIEW2_USER_DATA_FOLDER;
+  delete env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS;
   const stdout=fs.openSync(path.join(evidenceDir,`trace-${port}-stdout.log`),'a');
   const stderr=fs.openSync(path.join(evidenceDir,`trace-${port}-stderr.log`),'a');
   const child=spawn(exe,[],{env,windowsHide:false,stdio:['ignore',stdout,stderr]});
@@ -64,7 +87,7 @@ async function launchInstalled(port){
   let browser=null,last=null,endpoint=null;
   const endpoints=[`http://127.0.0.1:${port}`,`http://localhost:${port}`];
   for(let i=0;i<120&&!browser;i++){
-    if(child.exitCode!==null)throw new Error(`Installed Trace exited before WebView2 became available (exit ${child.exitCode}).`);
+    if(child.exitCode!==null){clearWebViewPolicy();throw new Error(`Installed Trace exited before WebView2 became available (exit ${child.exitCode}).`)}
     for(const candidate of endpoints){
       try{
         browser=await chromium.connectOverCDP(candidate);
@@ -81,7 +104,7 @@ async function launchInstalled(port){
       await wait(500);
     }
   }
-  if(!browser){killTree(child.pid);throw new Error(`Could not attach to installed WebView2 on port ${port}: ${String(last)}`)}
+  if(!browser){killTree(child.pid);clearWebViewPolicy();throw new Error(`Could not attach to installed WebView2 on port ${port}: ${String(last)}`)}
   diagnose('cdp-connected',{port,endpoint});
 
   let page=null,fallback=null,lastTargets=[];
@@ -108,7 +131,7 @@ async function launchInstalled(port){
   }
   page=page||fallback;
   diagnose('targets-discovered',{port,targets:lastTargets,selectedUrl:page?.url?.()||null});
-  if(!page){await browser.close().catch(()=>{});killTree(child.pid);throw new Error(`Installed Trace exposed no usable WebView page. Targets: ${JSON.stringify(lastTargets)}`)}
+  if(!page){await browser.close().catch(()=>{});killTree(child.pid);clearWebViewPolicy();throw new Error(`Installed Trace exposed no usable WebView page. Targets: ${JSON.stringify(lastTargets)}`)}
   activePage=page;
   await page.waitForLoadState('domcontentloaded').catch(()=>{});
   await page.waitForSelector('body',{timeout:20000});
@@ -116,7 +139,7 @@ async function launchInstalled(port){
   return {child,browser,page};
 }
 function killTree(pid){if(!pid)return;spawnSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}
-async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);await wait(1500);activePage=null}
+async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);clearWebViewPolicy();await wait(1500);activePage=null}
 async function screenshot(page,name){await page.screenshot({path:path.join(evidenceDir,`${name}.png`),fullPage:false});diagnose('screenshot',{name,url:page.url()})}
 async function importBinary(page,file,name){
   await page.locator('#file-import').setInputFiles(file);
