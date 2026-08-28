@@ -12,6 +12,23 @@ let surveyFile=process.env.TRACE_INSTALLED_SURVEY_FILE;
 let pdfFile=process.env.TRACE_INSTALLED_PDF_FILE;
 let audioFile=process.env.TRACE_INSTALLED_AUDIO_FILE;
 fs.mkdirSync(evidenceDir,{recursive:true});
+const diagnosticPath=path.join(evidenceDir,'installed-smoke-diagnostic.jsonl');
+const diagnose=(event,data={})=>{
+  try{fs.appendFileSync(diagnosticPath,JSON.stringify({at:new Date().toISOString(),event,...data})+'\n')}catch{}
+};
+let activePage=null;
+async function captureFatal(reason){
+  const err=reason instanceof Error?reason:new Error(String(reason));
+  diagnose('fatal',{message:err.message,stack:err.stack||''});
+  if(activePage){
+    try{fs.writeFileSync(path.join(evidenceDir,'fatal-page.html'),await activePage.content())}catch{}
+    try{fs.writeFileSync(path.join(evidenceDir,'fatal-page.txt'),await activePage.locator('body').innerText())}catch{}
+    try{await activePage.screenshot({path:path.join(evidenceDir,'fatal-page.png'),fullPage:false})}catch{}
+  }
+  console.error(err.stack||err.message);
+}
+process.on('uncaughtException',err=>{captureFatal(err).finally(()=>process.exit(1))});
+process.on('unhandledRejection',err=>{captureFatal(err).finally(()=>process.exit(1))});
 
 // Generate the additional acceptance files on the runner itself so the exact installed-app gate
 // always exercises a spreadsheet, searchable PDF and decodable media without network fixtures.
@@ -34,30 +51,73 @@ fs.mkdirSync(userData,{recursive:true});
 const requireFromSource=createRequire(path.resolve(playwrightRoot,'package.json'));
 const { chromium }=requireFromSource('playwright');
 
+diagnose('smoke-start',{exe,playwrightRoot,userData,importFile,surveyFile,pdfFile,audioFile});
 const failures=[];
 const check=(ok,msg)=>{if(!ok)failures.push(msg)};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function launchInstalled(port){
   const env={...process.env,WEBVIEW2_USER_DATA_FOLDER:userData,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-allow-origins=*`};
-  const child=spawn(exe,[],{env,windowsHide:false,stdio:'ignore'});
-  let browser=null,last=null;
-  for(let i=0;i<90;i++){
+  const stdout=fs.openSync(path.join(evidenceDir,`trace-${port}-stdout.log`),'a');
+  const stderr=fs.openSync(path.join(evidenceDir,`trace-${port}-stderr.log`),'a');
+  const child=spawn(exe,[],{env,windowsHide:false,stdio:['ignore',stdout,stderr]});
+  diagnose('process-spawned',{port,pid:child.pid});
+  let browser=null,last=null,endpoint=null;
+  const endpoints=[`http://127.0.0.1:${port}`,`http://localhost:${port}`];
+  for(let i=0;i<120&&!browser;i++){
     if(child.exitCode!==null)throw new Error(`Installed Trace exited before WebView2 became available (exit ${child.exitCode}).`);
-    try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);break}catch(err){last=err;await wait(500)}
+    for(const candidate of endpoints){
+      try{
+        browser=await chromium.connectOverCDP(candidate);
+        endpoint=candidate;
+        break;
+      }catch(err){last=err}
+    }
+    if(!browser){
+      if(i%10===0){
+        let version='unavailable';
+        try{const response=await fetch(`${endpoints[0]}/json/version`);version=`${response.status} ${await response.text()}`.slice(0,1200)}catch(err){version=String(err)}
+        diagnose('cdp-poll',{port,attempt:i+1,processAlive:child.exitCode===null,version,lastError:String(last)});
+      }
+      await wait(500);
+    }
   }
   if(!browser){killTree(child.pid);throw new Error(`Could not attach to installed WebView2 on port ${port}: ${String(last)}`)}
-  const contexts=browser.contexts();
-  const pages=contexts.flatMap(c=>c.pages());
-  let page=pages.find(p=>!/^devtools:/i.test(p.url()))||pages[0];
-  if(!page){await wait(500);page=browser.contexts().flatMap(c=>c.pages())[0]}
-  if(!page){await browser.close().catch(()=>{});killTree(child.pid);throw new Error('Installed Trace exposed no WebView page.')}
+  diagnose('cdp-connected',{port,endpoint});
+
+  let page=null,fallback=null,lastTargets=[];
+  const deadline=Date.now()+25000;
+  while(Date.now()<deadline&&!page){
+    const pages=browser.contexts().flatMap(c=>c.pages());
+    lastTargets=[];
+    for(const candidate of pages){
+      const url=candidate.url();
+      let title='';
+      try{title=await candidate.title()}catch{}
+      lastTargets.push({url,title});
+      if(/^devtools:/i.test(url)||/^about:blank$/i.test(url))continue;
+      fallback=fallback||candidate;
+      try{
+        if(await candidate.locator('.trace-home, .project-frame').count()){page=candidate;break}
+      }catch{}
+    }
+    if(!page){
+      const pagesNow=browser.contexts().flatMap(c=>c.pages());
+      fallback=fallback||pagesNow.find(p=>!/^devtools:/i.test(p.url())&&!/^about:blank$/i.test(p.url()))||null;
+      await wait(250);
+    }
+  }
+  page=page||fallback;
+  diagnose('targets-discovered',{port,targets:lastTargets,selectedUrl:page?.url?.()||null});
+  if(!page){await browser.close().catch(()=>{});killTree(child.pid);throw new Error(`Installed Trace exposed no usable WebView page. Targets: ${JSON.stringify(lastTargets)}`)}
+  activePage=page;
   await page.waitForLoadState('domcontentloaded').catch(()=>{});
   await page.waitForSelector('body',{timeout:20000});
+  diagnose('page-ready',{port,url:page.url(),title:await page.title().catch(()=>''),home:await page.locator('.trace-home').count(),project:await page.locator('.project-frame').count()});
   return {child,browser,page};
 }
 function killTree(pid){if(!pid)return;spawnSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}
-async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);await wait(1500)}
-async function screenshot(page,name){await page.screenshot({path:path.join(evidenceDir,`${name}.png`),fullPage:false});}
+async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);await wait(1500);activePage=null}
+async function screenshot(page,name){await page.screenshot({path:path.join(evidenceDir,`${name}.png`),fullPage:false});diagnose('screenshot',{name,url:page.url()})}
 async function importBinary(page,file,name){
   await page.locator('#file-import').setInputFiles(file);
   await page.waitForFunction(expected=>[...document.querySelectorAll('.import-result')].some(x=>x.textContent?.includes(expected)&&x.classList.contains('ok')),name,{timeout:30000});
@@ -181,5 +241,6 @@ await screenshot(page,'05-installed-resumed-code');
 await closeInstalled(second);
 
 fs.writeFileSync(path.join(evidenceDir,'installed-smoke.json'),JSON.stringify({freshHome:true,createdProject:true,importedTranscript:true,importedSpreadsheet:true,importedPdf:true,importedAudio:true,coding:true,memo:true,theme:true,analyse:true,findings:true,closedAndReopened:true,failures},null,2));
+diagnose('smoke-complete',{failures});
 if(failures.length){console.error(failures.join('\n'));process.exit(1)}
 console.log('Installed Trace WebView2 multi-format researcher journey: green');
