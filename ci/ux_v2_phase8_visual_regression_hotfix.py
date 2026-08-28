@@ -88,8 +88,8 @@ for assertion in (
   "assert Path('tests/ux_visual_baseline.json').exists()\n",
   "assert Path('tests/ux_foundation_visual_regression.mjs').exists()\n",
   "assert \"ux_foundation_visual_regression.mjs\" in Path('tests/ux_foundation_visuals.mjs').read_text(encoding='utf-8')\n",
-  "assert \"'enforce':True\" in Path('../control/ci/ux_v2_phase8_visual_regression_hotfix.py').read_text(encoding='utf-8')\n",
+  "assert '\"enforce\": true' in Path('tests/ux_visual_baseline.json').read_text(encoding='utf-8')\n",
 ):
   if assertion not in contract: contract+='\n'+assertion
 contract_path.write_text(contract,encoding='utf-8')
-print('Reviewed run-27 perceptual visual baseline locked; strict regression enforcement restored')
+print('Reviewed run-27 perceptual visual baseline locked; strict regression enforcement restored portably')
