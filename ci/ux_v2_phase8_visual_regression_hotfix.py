@@ -9,22 +9,22 @@ contract_path=Path('tests/ux_foundation_v2_contract.py')
 baseline={
   'schema':1,
   'algorithm':'block-dhash-16x16-v1',
-  'enforce':False,
-  'capture_note':'TEMPORARY REVIEW CAPTURE. This run is not an approved visual baseline and must not be used for Windows acceptance.',
-  'approved_source_run':33112215130,
-  'approved_source_sha':'7f78a3ae6555d0c18fc7e633046c83e9ce882991',
+  'enforce':True,
+  'approved_source_run':33117906540,
+  'approved_source_sha':'6917ce431798fa736203623ad71f8b1e0d8b2441',
   'approved_visual_artifact':'Trace-UX-Foundation-v2-Visual-Evidence',
-  'approved_visual_artifact_digest':'sha256:180e3c0ac60a3fe1f7070dba91bd9efaedc3606b1c455fe578f4e1ecafa864ef',
+  'approved_visual_artifact_digest':'sha256:20bf964fef8ab8721d5d89c0b2b0d77c3781bb9ec1712bd5effcef6eb2c63e93',
+  'approval_note':'Manually reviewed eight-screen candidate from run 33117906540 after contextual timestamp correction. No root horizontal overflow, source-tab overlap, phantom state, or sub-12px meaningful UI text was observed in the captured matrix.',
   'rule':'CI may compare against this baseline but must never regenerate it automatically. Intentional design changes require an explicit reviewed baseline update.',
   'screens':{
-    '01-home.png':{'hash':'70017019b78016d99b4215e1b58709c61cb93fb21f26bccb1ba79bd8b38662c4','max_hamming':24},
-    '02-empty-project.png':{'hash':'e331af19bc709c82be40bf4d9333a937a5b6a5b7b840a7b89dc1d080b204ca0c','max_hamming':24},
-    '03-data.png':{'hash':'6331f311ecf3ebe3ef41efc1e26ba6a9eb79e792f7c0aff3a5cbe7f8e7bba7da','max_hamming':24},
-    '04-code.png':{'hash':'6331ef11e886ef26ec86f4c5b12bf163bc33f412b442f445b085f086f106f006','max_hamming':24},
-    '05-themes.png':{'hash':'6331b311eaf3f5e3f5e3ecf3ae93eed3ee9baadaaa98ee59ee9bb650fb02b980','max_hamming':24},
-    '06-analyse.png':{'hash':'6331b311da73c763eee3eb63ea95e953ef1ae702bec1acc2a461abdaebc1f8da','max_hamming':24},
-    '07-write.png':{'hash':'6331f311eb73eac3ebc3a363ef33ee32a3c3e330b832b831f831f942f940ecc3','max_hamming':24},
-    '08-code-laptop.png':{'hash':'7311b036fb0fe654e654f6b4f985f1add3e7fb67d847fb06fe87f903fc0cfa08','max_hamming':28},
+    '01-home.png':{'hash':'70014101310116c11b411581358101071cb93fb31d0739031b811b8133810101','max_hamming':24},
+    '02-empty-project.png':{'hash':'c3318000bc009c00bc00bd4993338937a5b6a5a7b000a7b89dc0800080008000','max_hamming':24},
+    '03-data.png':{'hash':'6331f000ec83ebe3ef41efc1e269a6a8ab79a781b781aff0a5c9a7f9a7b9a7d8','max_hamming':24},
+    '04-code.png':{'hash':'6331e000e806ee26ec06f405b12bb163b003b002b002b005b004f004f004f004','max_hamming':24},
+    '05-themes.png':{'hash':'6331b000ea83f5e3f5e3acd3ae93aed3aa99aad9aa99aa58ea99b291f001b000','max_hamming':24},
+    '06-analyse.png':{'hash':'6331b000da03c763eee3eb63ea95e953ec19a701be01ac80a441abd9ab81b8d8','max_hamming':24},
+    '07-write.png':{'hash':'6331f000eb03eac3ebc3a343ae33ae30a3c1a331b831b830f831f841f841ecc0','max_hamming':24},
+    '08-code-laptop.png':{'hash':'7391b03af809e654e654f614f805d1add3e7db67d807f806f807f801f808f808','max_hamming':28},
   }
 }
 baseline_path.write_text(json.dumps(baseline,indent=2)+'\n',encoding='utf-8')
@@ -64,19 +64,18 @@ async function blockDHash(file,hashSize=16){
 function hammingHex(a,b){if(a.length!==b.length)throw new Error(`Hash length mismatch ${a.length} != ${b.length}`);let distance=0;for(let i=0;i<a.length;i++)distance+=POP[parseInt(a[i],16)^parseInt(b[i],16)];return distance;}
 
 const failures=[];
-const results={algorithm:baseline.algorithm,enforce:baseline.enforce,approved_source_run:baseline.approved_source_run,approved_visual_artifact_digest:baseline.approved_visual_artifact_digest,screens:{}};
+const results={algorithm:baseline.algorithm,enforce:baseline.enforce,approved_source_run:baseline.approved_source_run,approved_source_sha:baseline.approved_source_sha,approved_visual_artifact_digest:baseline.approved_visual_artifact_digest,screens:{}};
 for(const [name,rule] of Object.entries(baseline.screens)){
   const file=path.join(root,name);if(!fs.existsSync(file)){failures.push(`${name}: screenshot is missing`);continue;}
   const actual=await blockDHash(file);const distance=hammingHex(actual,rule.hash);
   results.screens[name]={expected:rule.hash,actual,hamming:distance,max_hamming:rule.max_hamming,pass:distance<=rule.max_hamming};
-  console.log(`VISUAL_CAPTURE ${name} ${actual} distance=${distance}`);
+  console.log(`VISUAL_REGRESSION ${name} ${actual} distance=${distance}`);
   if(distance>rule.max_hamming)failures.push(`${name}: visual fingerprint drift ${distance} bits exceeds approved limit ${rule.max_hamming}`);
 }
 await browser.close();
 fs.writeFileSync(path.join(root,'visual-regression.json'),JSON.stringify({...results,failures},null,2));
-if(failures.length&&baseline.enforce!==false){console.error(failures.join('\n'));process.exit(1)}
-if(failures.length)console.warn(`Trace visual baseline capture only: ${failures.length} screens differ from the previous approved reference. Review artifact before approval.`);
-else console.log(`Trace visual regression: ${Object.keys(baseline.screens).length} approved screens within perceptual baseline`);
+if(failures.length){console.error(failures.join('\n'));process.exit(1)}
+console.log(`Trace visual regression: ${Object.keys(baseline.screens).length} approved screens within reviewed perceptual baseline`);
 ''',encoding='utf-8')
 
 visual=visual_path.read_text(encoding='utf-8')
@@ -89,7 +88,8 @@ for assertion in (
   "assert Path('tests/ux_visual_baseline.json').exists()\n",
   "assert Path('tests/ux_foundation_visual_regression.mjs').exists()\n",
   "assert \"ux_foundation_visual_regression.mjs\" in Path('tests/ux_foundation_visuals.mjs').read_text(encoding='utf-8')\n",
+  "assert \"'enforce':True\" in Path('../control/ci/ux_v2_phase8_visual_regression_hotfix.py').read_text(encoding='utf-8')\n",
 ):
   if assertion not in contract: contract+='\n'+assertion
 contract_path.write_text(contract,encoding='utf-8')
-print('Temporary visual-review capture comparator staged; baseline enforcement intentionally disabled for this review run only')
+print('Reviewed run-27 perceptual visual baseline locked; strict regression enforcement restored')
