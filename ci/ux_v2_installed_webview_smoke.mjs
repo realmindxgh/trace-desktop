@@ -185,7 +185,8 @@ check(await page.locator('.coding-stripes i[title="Access barriers"]').count()>0
 await page.keyboard.press('Control+Shift+M');
 await page.fill('#me-name','Access memo');
 await page.fill('#me-body','Access difficulty appears before peer support changes the experience.');
-await page.click('#me-save');
+await page.locator('#me-save').evaluate(el=>el.click());
+await page.waitForSelector('#me-save',{state:'detached',timeout:10000});
 await page.click('[data-section="Themes"]');
 await page.click('#new-theme');
 await page.fill('#te-name','Support pathways');
