@@ -16,7 +16,7 @@ const { chromium }=requireFromSource('playwright');
 const failures=[];
 const check=(ok,msg)=>{if(!ok)failures.push(msg)};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-const webViewPolicyRoot=String.raw`HKCU\Software\Policies\Microsoft\Edge\WebView2`;
+const webViewPolicyRoot=String.raw`HKCU\Software\Policies\Microsoft\Edge\WebView2`+'\\';
 const webViewPolicyValue=path.basename(exe);
 function reg(args,label,required=true){
   const result=spawnSync('reg.exe',args,{windowsHide:true,encoding:'utf8'});
