@@ -167,6 +167,8 @@ await page.click('#create-project');
 await page.waitForSelector('.project-overview',{timeout:20000});
 check(await page.locator('.project-overview').count()===1,'Installed New Project did not open Project Overview');
 await page.locator('#file-import').setInputFiles(importFile);
+const importName=path.basename(importFile);
+await page.waitForFunction(expected=>[...document.querySelectorAll('.import-result')].some(x=>x.textContent?.includes(expected)&&x.classList.contains('ok')),importName,{timeout:30000});
 await page.waitForFunction(()=>document.querySelector('.project-health')?.textContent?.includes('1'),null,{timeout:20000}).catch(()=>{});
 check(await page.locator('.project-health article').filter({hasText:'Sources'}).filter({hasText:'1'}).count()>0,'Installed import did not update source count');
 
@@ -185,7 +187,7 @@ check(await page.locator('.coding-stripes i[title="Access barriers"]').count()>0
 await page.keyboard.press('Control+Shift+M');
 await page.fill('#me-name','Access memo');
 await page.fill('#me-body','Access difficulty appears before peer support changes the experience.');
-await page.locator('#me-save').evaluate(el=>el.click());
+await page.click('#me-save');
 await page.waitForSelector('#me-save',{state:'detached',timeout:10000});
 await page.click('[data-section="Themes"]');
 await page.click('#new-theme');
