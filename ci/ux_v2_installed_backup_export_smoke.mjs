@@ -37,8 +37,8 @@ function killTree(pid){if(!pid)return;spawnSync('taskkill',['/PID',String(pid),'
 async function launchInstalled(port){
   configureWebViewPolicy(port);
   const env={...process.env};
-  delete env.WEBVIEW2_USER_DATA_FOLDER;
-  delete env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS;
+  env.WEBVIEW2_USER_DATA_FOLDER=userData;
+  env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=`--remote-debugging-port=${port} --remote-allow-origins=*`;
   const child=spawn(exe,[],{env,windowsHide:false,stdio:'ignore'});
   let browser=null,last=null;
   for(let i=0;i<90;i++){
