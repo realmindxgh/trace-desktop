@@ -7,5 +7,5 @@ visual_baseline_mode=strict
 approved_visual_reference_run=33117906540
 approved_visual_reference_digest=sha256:20bf964fef8ab8721d5d89c0b2b0d77c3781bb9ec1712bd5effcef6eb2c63e93
 strict_visual_gate_run=33152414998
-acceptance_retry=6
+acceptance_retry=7
 physical_real_machine_uat=false
