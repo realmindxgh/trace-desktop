@@ -78,8 +78,9 @@ process.on('exit',clearWebViewPolicy);
 async function launchInstalled(port){
   configureWebViewPolicy(port);
   const env={...process.env};
-  delete env.WEBVIEW2_USER_DATA_FOLDER;
-  delete env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS;
+  env.WEBVIEW2_USER_DATA_FOLDER=userData;
+  env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=`--remote-debugging-port=${port} --remote-allow-origins=*`;
+  diagnose('webview-environment-configured',{port,userDataFolder:env.WEBVIEW2_USER_DATA_FOLDER,additionalBrowserArguments:env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS});
   const stdout=fs.openSync(path.join(evidenceDir,`trace-${port}-stdout.log`),'a');
   const stderr=fs.openSync(path.join(evidenceDir,`trace-${port}-stderr.log`),'a');
   const child=spawn(exe,[],{env,windowsHide:false,stdio:['ignore',stdout,stderr]});
