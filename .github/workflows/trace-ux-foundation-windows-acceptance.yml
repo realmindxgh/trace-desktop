@@ -137,6 +137,36 @@ jobs:
           python ../control/ci/add_trace_setup_cli.py
           if ($LASTEXITCODE -ne 0) { throw 'Could not add branded setup verification CLI.' }
 
+      - name: Instrument Windows WebView for installed acceptance
+        shell: pwsh
+        working-directory: source/work
+        run: |
+          $configPath='src-tauri/tauri.conf.json'
+          $config=Get-Content $configPath -Raw | ConvertFrom-Json
+          $window=$config.app.windows[0]
+          $args='--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9331 --remote-allow-origins=*'
+          $window | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue $args -Force
+          $window | Add-Member -NotePropertyName devtools -NotePropertyValue $true -Force
+          $config | ConvertTo-Json -Depth 100 | Set-Content $configPath -Encoding UTF8
+          $cargoPath='src-tauri/Cargo.toml'
+          $cargo=Get-Content $cargoPath -Raw
+          $needle='tauri = { version = "2", features = [] }'
+          $replacement='tauri = { version = "2", features = ["devtools"] }'
+          if(!$cargo.Contains($needle)){ throw 'Could not locate the Tauri dependency for acceptance instrumentation.' }
+          $cargo=$cargo.Replace($needle,$replacement)
+          Set-Content $cargoPath $cargo -Encoding UTF8
+          $smokePath='../../control/ci/ux_v2_installed_webview_smoke.mjs'
+          $smoke=Get-Content $smokePath -Raw
+          if(!$smoke.Contains('launchInstalled(9332)')){ throw 'Installed smoke second-launch port contract changed unexpectedly.' }
+          $smoke=$smoke.Replace('launchInstalled(9332)','launchInstalled(9331)')
+          Set-Content $smokePath $smoke -Encoding UTF8
+          $recoveryPath='../../control/ci/ux_v2_installed_backup_export_smoke.mjs'
+          $recovery=Get-Content $recoveryPath -Raw
+          if(!$recovery.Contains('launchInstalled(9333)')){ throw 'Installed recovery smoke port contract changed unexpectedly.' }
+          $recovery=$recovery.Replace('launchInstalled(9333)','launchInstalled(9331)')
+          Set-Content $recoveryPath $recovery -Encoding UTF8
+          Write-Host 'Acceptance-only WebView instrumentation enabled on fixed CDP port 9331.'
+
       - name: Build native Trace bundle
         shell: pwsh
         working-directory: source/work
