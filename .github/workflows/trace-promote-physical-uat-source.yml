@@ -1,0 +1,63 @@
+name: Promote Trace physical UAT repaired source
+
+on:
+  push:
+    branches: [trace-ux-foundation-v2]
+    paths:
+      - '.github/workflows/trace-promote-physical-uat-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  promote:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPAIR_RUN: '33318695117'
+      REPAIR_ARTIFACT: Trace-Physical-UAT-Transcription-Fixed-Source
+      REPAIR_DIGEST: sha256:a36aae1af66a5c601ffa0d3dcf1676dafc7c7103ced83ae6771191316a08b0b4
+    steps:
+      - name: Verify repaired source artifact
+        shell: pwsh
+        run: |
+          $meta=(gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:REPAIR_RUN/artifacts" | ConvertFrom-Json)
+          $artifact=$meta.artifacts | Where-Object { $_.name -eq $env:REPAIR_ARTIFACT } | Select-Object -First 1
+          if(!$artifact){ throw 'Physical-UAT repaired source artifact was not found.' }
+          if($artifact.digest -ne $env:REPAIR_DIGEST){ throw "Repaired source digest mismatch: $($artifact.digest)" }
+
+      - name: Download exact repaired source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path promoted | Out-Null
+          gh run download $env:REPAIR_RUN --repo $env:GITHUB_REPOSITORY --name $env:REPAIR_ARTIFACT --dir promoted
+          if($LASTEXITCODE -ne 0){ throw 'Could not download physical-UAT repaired source.' }
+          foreach($required in @('promoted/index.html','promoted/src/app.js','promoted/src/styles.css','promoted/src-tauri/Cargo.toml','promoted/src-tauri/src/transcription.rs','promoted/setup-shell/src-tauri/Cargo.toml')){
+            if(!(Test-Path $required)){ throw "Repaired source is incomplete: $required" }
+          }
+
+      - name: Write provenance chain
+        shell: pwsh
+        run: |
+          @"
+          promoted_from_repair_run=33318695117
+          promoted_from_repair_control_sha=f073874c57521594bf35409495d156d60308bd9d
+          promoted_from_repair_artifact=Trace-Physical-UAT-Transcription-Fixed-Source
+          promoted_from_repair_artifact_digest=sha256:a36aae1af66a5c601ffa0d3dcf1676dafc7c7103ced83ae6771191316a08b0b4
+          parent_green_run=33152414998
+          parent_green_sha=69b5f788f6b5723140efcc1e9fe970191e2225a3
+          parent_green_artifact_digest=sha256:510adf1546f00b5160ed530adfa57d51c14b01eaf945776e6b7db732c7104787
+          physical_uat_retest_required=true
+          physical_real_machine_uat=false
+          "@ | Set-Content promoted/PHYSICAL-UAT-PROVENANCE.txt
+
+      - name: Upload acceptance-compatible repaired source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-UX-Foundation-v2-Green-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: promoted/**
