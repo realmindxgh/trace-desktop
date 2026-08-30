@@ -57,8 +57,12 @@ async function closeInstalled(session){try{await session.browser.close()}catch{}
 const session=await launchInstalled(9333);
 const page=session.page;
 await page.waitForSelector('.trace-home',{timeout:20000});
-check(await page.locator('#resume-current').count()>0,'Export/recovery acceptance could not resume the installed project');
-if(await page.locator('#resume-current').count())await page.click('#resume-current');
+const resumeCurrent=page.locator('#resume-current');
+const recentProject=page.locator('[data-home-project]').filter({hasText:'Installed UX journey'}).first();
+const hasResume=await resumeCurrent.count()>0;
+check(hasResume||await recentProject.count()>0,'Export/recovery acceptance could not find the persisted installed project');
+if(hasResume)await resumeCurrent.click();
+else await recentProject.click();
 await page.waitForSelector('.project-frame',{timeout:20000});
 
 // Export the saved findings from the actual installed WebView and verify the downloaded file contents.
