@@ -200,6 +200,7 @@ const themeCodes=page.locator('[data-theme-code]');
 check(await themeCodes.count()>0,'Installed theme editor exposed no code choices');
 if(await themeCodes.count())await themeCodes.first().check();
 await page.click('#te-save');
+await page.getByText('Support pathways',{exact:true}).first().waitFor({state:'visible',timeout:30000});
 check(await page.getByText('Support pathways',{exact:true}).count()>0,'Installed journey did not create Support pathways');
 
 await page.click('[data-section="Analyse"]');
@@ -209,8 +210,11 @@ check(await page.locator('[data-write-target^="theme:"]').count()>0,'Installed t
 const findings='Participants described initial access barriers, with support pathways shaping how help was experienced.';
 await page.fill('#findings-body',findings);
 await page.click('#save-findings');
-await page.waitForTimeout(400);
+await page.waitForFunction(()=>document.querySelector('#write-save-status')?.textContent?.includes('Saved'),null,{timeout:30000});
+// Remain on Write long enough for the editor's scheduled autosave to finish with the same body.
+await page.waitForTimeout(1000);
 check(await page.locator('#write-save-status').filter({hasText:/Saved/}).count()>0,'Installed findings did not save');
+check((await page.locator('#findings-body').inputValue().catch(()=>''))===findings,'Installed findings body changed during save synchronization');
 await screenshot(page,'02-installed-populated-write');
 
 // Exercise the other research file classes required by final acceptance: spreadsheet cases, PDF and media.
@@ -263,7 +267,13 @@ await page.click('[data-section="Themes"]');
 check(await page.getByText('Support pathways',{exact:true}).count()>0,'Installed close/reopen lost the saved theme');
 await page.click('[data-section="Write"]');
 check((await page.locator('#findings-body').inputValue().catch(()=>''))===findings,'Installed close/reopen lost the saved findings');
-await page.click('[data-section="Code"]');
+// A reopened project may restore the last media source. Explicitly reopen the transcript before checking text coding stripes.
+await page.click('[data-section="Data"]');
+if(await page.locator('[data-data-context="sources"]').count())await page.click('[data-data-context="sources"]');
+const reopenedTranscript=page.locator('.source-card').filter({hasText:importName}).first();
+check(await reopenedTranscript.count()>0,'Installed close/reopen lost the transcript source needed to verify coding');
+if(await reopenedTranscript.count())await reopenedTranscript.click();
+await page.waitForSelector('.coding-stripes i[title="Access barriers"]',{timeout:20000});
 check(await page.locator('.coding-stripes i[title="Access barriers"]').count()>0,'Installed close/reopen lost the applied coding');
 await page.click('[data-section="Data"]');
 await page.click('[data-data-context="participants"]');
