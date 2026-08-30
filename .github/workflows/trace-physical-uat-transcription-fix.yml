@@ -1,0 +1,193 @@
+name: Trace physical UAT transcription repair gate
+
+on:
+  push:
+    branches: [trace-ux-foundation-v2]
+    paths:
+      - 'ci/ux_v2_physical_uat_hotfix.py'
+      - 'ci/ux_v2_physical_uat_contract_fix.py'
+      - 'ci/ux_v2_physical_uat_transcription_fix.py'
+      - '.github/workflows/trace-physical-uat-transcription-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: trace-physical-uat-transcription-repair
+  cancel-in-progress: true
+
+jobs:
+  repaired-source:
+    runs-on: windows-latest
+    timeout-minutes: 100
+    env:
+      PYTHONUTF8: '1'
+      GH_TOKEN: ${{ github.token }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/trace-physical-uat-transcription-target
+    steps:
+      - name: Checkout UAT repair control
+        uses: actions/checkout@v4
+        with:
+          ref: trace-ux-foundation-v2
+          path: control
+
+      - name: Download exact automated-green source
+        shell: pwsh
+        run: |
+          gh run download 33152414998 --repo $env:GITHUB_REPOSITORY --name 'Trace-UX-Foundation-v2-Green-Source' --dir work
+          if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve exact automated-green Trace source.' }
+          foreach ($required in @('work/index.html','work/src/app.js','work/src/styles.css','work/src-tauri/src/lib.rs','work/src-tauri/src/transcription.rs','work/setup-shell/src/app.js','work/setup-shell/src-tauri/src/main.rs')) {
+            if (!(Test-Path $required)) { throw "Automated-green source is incomplete: $required" }
+          }
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply physical UAT repairs
+        shell: pwsh
+        working-directory: work
+        run: |
+          python ../control/ci/ux_v2_physical_uat_hotfix.py
+          if ($LASTEXITCODE -ne 0) { throw 'Physical UAT blocker repair failed.' }
+          python ../control/ci/ux_v2_physical_uat_contract_fix.py
+          if ($LASTEXITCODE -ne 0) { throw 'Physical UAT carried-contract repair failed.' }
+          python ../control/ci/ux_v2_physical_uat_transcription_fix.py
+          if ($LASTEXITCODE -ne 0) { throw 'Whisper auto-language repair failed.' }
+          node --check src/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'Patched app JavaScript is invalid.' }
+
+      - name: Provision verified included Whisper model
+        shell: pwsh
+        working-directory: work
+        run: |
+          $modelDir = Join-Path (Get-Location) 'src-tauri/resources/models'
+          New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
+          $model = Join-Path $modelDir 'ggml-base-q5_1.bin'
+          Invoke-WebRequest -Uri 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin?download=true' -OutFile $model
+          if (!(Test-Path $model) -or (Get-Item $model).Length -lt 50000000) { throw 'Included Whisper model download is incomplete.' }
+          $sha1 = (Get-FileHash $model -Algorithm SHA1).Hash.ToLowerInvariant()
+          if ($sha1 -ne 'a3733eda680ef76256db5fc5dd9de8629e62c5e7') { throw "Included Whisper model SHA1 mismatch: $sha1" }
+          "TRACE_TEST_WHISPER_MODEL=$model" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Generate real spoken transcription fixture
+        shell: pwsh
+        run: |
+          $wav = Join-Path $env:RUNNER_TEMP 'trace-spoken-uat.wav'
+          "TRACE_TEST_TRANSCRIPTION_WAV=$wav" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $env:TRACE_TEST_TRANSCRIPTION_WAV = $wav
+          $sapi = @'
+          Add-Type -AssemblyName System.Speech
+          $voice = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $voice.SetOutputToWaveFile($env:TRACE_TEST_TRANSCRIPTION_WAV)
+          $voice.Speak('Trace transcription works on this computer. Evidence remains connected to the research source.')
+          $voice.Dispose()
+          '@
+          $sapi | powershell.exe -NoProfile -Command -
+          if (!(Test-Path $wav) -or (Get-Item $wav).Length -lt 1000) { throw 'Could not generate a real spoken WAV fixture.' }
+
+      - name: Re-run carried research and UAT contracts
+        shell: pwsh
+        working-directory: work
+        run: |
+          function Check([string]$Label,[scriptblock]$Cmd){ & $Cmd; if($LASTEXITCODE -ne 0){throw "$Label failed with $LASTEXITCODE"} }
+          Check 'app JavaScript syntax' { node --check src/app.js }
+          Check 'UX Foundation static contract' { python tests/ux_foundation_v2_contract.py }
+          Check 'schema contract' { python tests/schema_contract.py }
+          Check 'Office and survey imports' { python tests/v11_imports_display.py }
+          Check 'coding and usability regression' { python tests/v11_usability.py }
+          Check 'strengthened local transcription regression' { python tests/v11_transcription.py }
+          Check 'PDF text regression' { python tests/v11_pdf_text.py }
+          Check 'analysis/intercoder regression' { python tests/v12_analysis.py }
+          Check 'v0.12.1 hardening regression' { python tests/v0121_hardening.py }
+          Check 'v0.12.1 full checklist regression' { python tests/v0121_full_checklist.py }
+          Check 'intercoder mathematics' { node tests/v12_analysis_math.mjs }
+          Check 'large-project workload contract' { node tests/v0121_workload.mjs }
+
+      - name: Build both repaired frontends
+        shell: pwsh
+        working-directory: work
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw 'Trace frontend build failed.' }
+          Push-Location setup-shell
+          npm run build
+          $setupBuild=$LASTEXITCODE
+          Pop-Location
+          if ($setupBuild -ne 0) { throw 'Trace Setup frontend build failed.' }
+
+      - name: Compile native app and prove spoken Whisper transcription
+        shell: pwsh
+        working-directory: work
+        run: |
+          cargo check --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native cargo check failed.' }
+          cargo test --manifest-path src-tauri/Cargo.toml -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw 'Trace native tests or real spoken Whisper inference failed.' }
+
+      - name: Compile and test repaired setup shell
+        shell: pwsh
+        working-directory: work
+        run: |
+          New-Item -ItemType Directory -Force -Path setup-shell/src-tauri/payload | Out-Null
+          [IO.File]::WriteAllBytes('setup-shell/src-tauri/payload/trace-payload.exe',[byte[]](0x4D,0x5A))
+          try {
+            cargo check --manifest-path setup-shell/src-tauri/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'Setup shell cargo check failed.' }
+            cargo test --manifest-path setup-shell/src-tauri/Cargo.toml
+            if ($LASTEXITCODE -ne 0) { throw 'Setup shell tests failed.' }
+          } finally { Remove-Item setup-shell/src-tauri/payload/trace-payload.exe -Force -ErrorAction SilentlyContinue }
+
+      - name: Write repaired-source receipt
+        shell: pwsh
+        working-directory: work
+        run: |
+          @"
+          source_baseline_run=33152414998
+          source_baseline_sha=69b5f788f6b5723140efcc1e9fe970191e2225a3
+          physical_uat_status=FAILED_REPAIRED_PENDING_REAL_MACHINE_RETEST
+          media_preview_boundary=camelCase_verified
+          bundled_whisper_model=ggml-base-q5_1.bin
+          bundled_whisper_model_sha1=a3733eda680ef76256db5fc5dd9de8629e62c5e7
+          whisper_auto_language=detect_and_continue
+          real_spoken_whisper_inference=passed
+          same_version_setup_mode=repair
+          physical_real_machine_uat=false
+          "@ | Set-Content physical-uat-repair-receipt.txt
+
+      - name: Upload repaired source checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: Trace-Physical-UAT-Transcription-Fixed-Source
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            work/index.html
+            work/assets/**
+            work/package.json
+            work/package-lock.json
+            work/src/**
+            work/database/**
+            work/src-tauri/build.rs
+            work/src-tauri/Cargo.toml
+            work/src-tauri/Cargo.lock
+            work/src-tauri/tauri.conf.json
+            work/src-tauri/src/**
+            work/src-tauri/icons/**
+            work/src-tauri/windows/**
+            work/src-tauri/resources/**
+            work/setup-shell/**
+            work/tests/**
+            work/scripts/**
+            work/physical-uat-repair-receipt.txt
