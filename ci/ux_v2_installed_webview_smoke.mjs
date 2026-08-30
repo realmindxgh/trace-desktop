@@ -185,6 +185,7 @@ await page.locator('.transcript-line p').first().evaluate(el=>{const node=el.fir
 await page.click('#tool-code');
 if(await page.locator('[data-mode="manual"]').count())await page.click('[data-mode="manual"]');
 await page.locator('[data-code]').filter({hasText:'Access barriers'}).first().click();
+await page.waitForSelector('.coding-stripes i[title="Access barriers"]',{timeout:30000});
 check(await page.locator('.coding-stripes i[title="Access barriers"]').count()>0,'Installed journey did not visibly apply Access barriers');
 
 await page.keyboard.press('Control+Shift+M');
