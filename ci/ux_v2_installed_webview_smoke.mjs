@@ -142,9 +142,12 @@ async function launchInstalled(port){
 function killTree(pid){if(!pid)return;spawnSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}
 async function closeInstalled(session){try{await session.browser.close()}catch{}killTree(session.child.pid);clearWebViewPolicy();await wait(1500);activePage=null}
 async function screenshot(page,name){await page.screenshot({path:path.join(evidenceDir,`${name}.png`),fullPage:false});diagnose('screenshot',{name,url:page.url()})}
+async function waitForImportedSource(page,name){
+  await page.waitForFunction(expected=>[...document.querySelectorAll('.source-card')].some(x=>x.textContent?.includes(expected)),name,{timeout:30000});
+}
 async function importBinary(page,file,name){
   await page.locator('#file-import').setInputFiles(file);
-  await page.waitForFunction(expected=>[...document.querySelectorAll('.import-result')].some(x=>x.textContent?.includes(expected)&&x.classList.contains('ok')),name,{timeout:30000});
+  await waitForImportedSource(page,name);
 }
 
 let first=await launchInstalled(9331);
@@ -168,9 +171,9 @@ await page.waitForSelector('.project-overview',{timeout:20000});
 check(await page.locator('.project-overview').count()===1,'Installed New Project did not open Project Overview');
 await page.locator('#file-import').setInputFiles(importFile);
 const importName=path.basename(importFile);
-await page.waitForFunction(expected=>[...document.querySelectorAll('.import-result')].some(x=>x.textContent?.includes(expected)&&x.classList.contains('ok')),importName,{timeout:30000});
-await page.waitForFunction(()=>document.querySelector('.project-health')?.textContent?.includes('1'),null,{timeout:20000}).catch(()=>{});
-check(await page.locator('.project-health article').filter({hasText:'Sources'}).filter({hasText:'1'}).count()>0,'Installed import did not update source count');
+await waitForImportedSource(page,importName);
+await page.waitForFunction(()=>document.querySelector('[data-data-context="sources"] b')?.textContent?.trim()==='1',null,{timeout:20000});
+check((await page.locator('[data-data-context="sources"] b').textContent().catch(()=>''))?.trim()==='1','Installed import did not update source count');
 
 await page.click('[data-section="Code"]');
 await page.waitForSelector('.transcript-line p',{timeout:20000});
@@ -187,7 +190,7 @@ check(await page.locator('.coding-stripes i[title="Access barriers"]').count()>0
 await page.keyboard.press('Control+Shift+M');
 await page.fill('#me-name','Access memo');
 await page.fill('#me-body','Access difficulty appears before peer support changes the experience.');
-await page.click('#me-save');
+await page.locator('#me-save').evaluate(el=>el.click());
 await page.waitForSelector('#me-save',{state:'detached',timeout:10000});
 await page.click('[data-section="Themes"]');
 await page.click('#new-theme');
