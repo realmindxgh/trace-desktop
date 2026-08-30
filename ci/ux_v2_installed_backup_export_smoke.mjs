@@ -107,7 +107,13 @@ await page.click('[data-section="Themes"]');
 check(await page.getByText('Support pathways',{exact:true}).count()>0,'Restored backup lost the saved theme');
 await page.click('[data-section="Write"]');
 check((await page.locator('#findings-body').inputValue().catch(()=>''))===findings,'Restored backup lost the saved findings');
-await page.click('[data-section="Code"]');
+// Restores can reopen on the last PDF/audio source. Reopen the transcript before verifying text coding stripes.
+await page.click('[data-section="Data"]');
+if(await page.locator('[data-data-context="sources"]').count())await page.click('[data-data-context="sources"]');
+const restoredTranscript=page.locator('.source-card').filter({hasText:/interview\.txt/i}).first();
+check(await restoredTranscript.count()>0,'Restored backup lost the transcript source needed to verify coding');
+if(await restoredTranscript.count())await restoredTranscript.click();
+await page.waitForSelector('.coding-stripes i[title="Access barriers"]',{timeout:20000});
 check(await page.locator('.coding-stripes i[title="Access barriers"]').count()>0,'Restored backup lost the applied coding');
 await page.click('[data-section="Data"]');
 await page.click('[data-data-context="participants"]');
