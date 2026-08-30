@@ -1,5 +1,5 @@
 source_gate_run=33152414998
-source_gate_sha=69b5f788f6b5723140efcc98abac5b73a18effb3d
+source_gate_sha=69b5f788f6b5723140efcc1e9fe970191e2225a3
 source_gate_result=success
 source_gate_artifact=Trace-UX-Foundation-v2-Green-Source
 source_gate_artifact_digest=sha256:510adf1546f00b5160ed530adfa57d51c14b01eaf945776e6b7db732c7104787
@@ -7,5 +7,5 @@ visual_baseline_mode=strict
 approved_visual_reference_run=33117906540
 approved_visual_reference_digest=sha256:20bf964fef8ab8721d5d89c0b2b0d77c3781bb9ec1712bd5effcef6eb2c63e93
 strict_visual_gate_run=33152414998
-acceptance_retry=16
+acceptance_retry=17
 physical_real_machine_uat=false
