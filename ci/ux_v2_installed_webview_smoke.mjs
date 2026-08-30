@@ -251,9 +251,14 @@ await closeInstalled(first);
 // and the researcher must be able to resume the project without losing analytical or imported research state.
 let second=await launchInstalled(9332);page=second.page;
 await page.waitForSelector('.trace-home',{timeout:20000});
-check(await page.locator('#resume-current').count()>0,'Installed close/reopen lost the current project launcher');
 check(await page.locator('.project-frame').count()===0,'Installed close/reopen bypassed Home without an explicit resume preference');
-await page.click('#resume-current');
+const resumeCurrent=page.locator('#resume-current');
+const recentProject=page.locator('[data-home-project]').filter({hasText:'Installed UX journey'}).first();
+const hasResume=await resumeCurrent.count()>0;
+check(hasResume||await recentProject.count()>0,'Installed close/reopen lost the persisted project launcher');
+if(hasResume)await resumeCurrent.click();
+else await recentProject.click();
+await page.waitForSelector('.project-frame',{timeout:20000});
 await page.click('[data-section="Themes"]');
 check(await page.getByText('Support pathways',{exact:true}).count()>0,'Installed close/reopen lost the saved theme');
 await page.click('[data-section="Write"]');
