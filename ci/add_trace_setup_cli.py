@@ -58,9 +58,10 @@ for token in ('--silent-install','--silent-uninstall','TRACE_SETUP_SILENT_INSTAL
         raise SystemExit(f'Missing injected token: {token}')
 
 # The Windows acceptance workflow already invokes this control script before the
-# installed WebView journey. Keep the physical-UAT driver transform separate so
-# its assertions are explicit and independently syntax-checkable.
-patch_script = Path('../control/ci/ux_v2_installed_uat20_patch.py')
-if not patch_script.exists():
-    raise SystemExit(f'Installed physical-UAT patch script is missing: {patch_script}')
-exec(compile(patch_script.read_text(encoding='utf-8'), str(patch_script), 'exec'))
+# installed WebView journey. Keep the physical-UAT driver transforms separate so
+# their assertions are explicit and independently syntax-checkable.
+for patch_name in ('ux_v2_installed_uat20_patch.py','ux_v2_installed_uat21_patch.py'):
+    patch_script = Path('../control/ci') / patch_name
+    if not patch_script.exists():
+        raise SystemExit(f'Installed physical-UAT patch script is missing: {patch_script}')
+    exec(compile(patch_script.read_text(encoding='utf-8'), str(patch_script), 'exec'))
